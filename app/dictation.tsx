@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ImageBackground,
@@ -115,6 +116,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
   const isManualMode = entryMode === 'manual';
   const [openSectionId, setOpenSectionId] = useState<string | null>(isManualMode ? null : 'metadata');
   const [sampleLibrary, setSampleLibrary] = useState<SampleLibraryEntry[]>([]);
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const hasHandledInitialSectionRef = useRef(false);
   const scrollViewRef = useRef<ScrollView | null>(null);
   const sectionOffsetsRef = useRef<Record<string, number>>({});
@@ -372,32 +374,49 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                 <Pressable
                   onPress={() => {
                     void (async () => {
-                      const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
-                      if (created) {
-                        if (created.renderError) {
-                          setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
-                          router.push('/archive');
-                          return Alert.alert(
-                            'Plot Render Failed',
-                            'Your profile data was saved to Archive, but the plotted renderer did not complete. Open the saved card in Archive to edit or retry once the renderer is available.'
-                          );
+                      if (isCreatingProfile) {
+                        return;
+                      }
+                      setIsCreatingProfile(true);
+                      try {
+                        const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
+                        if (created) {
+                          if (created.renderError) {
+                            setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
+                            router.push('/archive');
+                            return Alert.alert(
+                              'Plot Render Failed',
+                              'Your profile data was saved to Archive, but the plotted renderer did not complete. Open the saved card in Archive to edit or retry once the renderer is available.'
+                            );
+                          }
+                          setSaveMessage(`${created.title} saved to device. Opening the rendered preview now.`);
+                          router.push({
+                            pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
+                            params: { profileId: created.id },
+                          });
                         }
-                        setSaveMessage(`${created.title} saved to device. Opening the rendered preview now.`);
-                        router.push({
-                          pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
-                          params: { profileId: created.id },
-                        });
+                      } finally {
+                        setIsCreatingProfile(false);
                       }
                     })();
                   }}
-                  style={[styles.createButton, !draft.rawNotes.trim() ? styles.buttonDisabled : null]}
-                  disabled={!draft.rawNotes.trim()}>
-                  <Text style={styles.createButtonText}>Create Profile</Text>
+                  style={[styles.createButton, !draft.rawNotes.trim() || isCreatingProfile ? styles.buttonDisabled : null]}
+                  disabled={!draft.rawNotes.trim() || isCreatingProfile}>
+                  {isCreatingProfile ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color="#FFF8EE" />
+                      <Text style={styles.createButtonText}>Building Profile...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.createButtonText}>Create Profile</Text>
+                  )}
                 </Pressable>
               </View>
 
               <Text style={styles.stickySubcopy}>
-                {extractedEntries.length > 0
+                {isCreatingProfile
+                  ? 'Rendering can take around 10 seconds. Please wait while Nivium builds the plotted profile.'
+                  : extractedEntries.length > 0
                   ? `${extractedEntries.length} fields recognized from the voice notes`
                   : 'Paste or type voice notes, then fill the field card below.'}
               </Text>
@@ -619,29 +638,45 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
             <Pressable
               onPress={() => {
                 void (async () => {
-                  const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
-                  if (created) {
-                    if (created.renderError) {
-                      setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
-                      router.push('/archive');
-                      return Alert.alert(
-                        'Plot Render Failed',
-                        'Your profile data was saved to Archive, but the plotted renderer did not complete. Open the saved card in Archive to edit or retry once the renderer is available.'
-                      );
+                  if (isCreatingProfile) {
+                    return;
+                  }
+                  setIsCreatingProfile(true);
+                  try {
+                    const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
+                    if (created) {
+                      if (created.renderError) {
+                        setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
+                        router.push('/archive');
+                        return Alert.alert(
+                          'Plot Render Failed',
+                          'Your profile data was saved to Archive, but the plotted renderer did not complete. Open the saved card in Archive to edit or retry once the renderer is available.'
+                        );
+                      }
+                      setSaveMessage(`${created.title} saved to device. Opening the rendered preview now.`);
+                      router.push({
+                        pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
+                        params: { profileId: created.id },
+                      });
                     }
-                    setSaveMessage(`${created.title} saved to device. Opening the rendered preview now.`);
-                    router.push({
-                      pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
-                      params: { profileId: created.id },
-                    });
+                  } finally {
+                    setIsCreatingProfile(false);
                   }
                 })();
               }}
-              style={({ pressed }) => [styles.bottomCreateShell, pressed ? styles.pressed : null]}>
+              style={({ pressed }) => [styles.bottomCreateShell, pressed && !isCreatingProfile ? styles.pressed : null]}
+              disabled={isCreatingProfile}>
               <View style={styles.bottomCreateHighlight} />
               <View style={styles.bottomCreateFrame}>
                 <View style={styles.bottomCreateButton}>
-                  <Text style={styles.bottomCreateButtonText}>Create Profile</Text>
+                  {isCreatingProfile ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color="#FFF8EE" />
+                      <Text style={styles.bottomCreateButtonText}>Building Profile...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.bottomCreateButtonText}>Create Profile</Text>
+                  )}
                 </View>
               </View>
             </Pressable>
@@ -651,27 +686,42 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
             <Pressable
               onPress={() => {
                 void (async () => {
-                  const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
-                  if (created) {
-                    if (created.renderError) {
-                      setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
-                      router.push('/archive');
-                      return Alert.alert(
-                        'Plot Render Failed',
-                        'Your profile data was saved to Archive, but the plotted renderer did not complete. Open the saved card in Archive to edit or retry once the renderer is available.'
-                      );
+                  if (isCreatingProfile) {
+                    return;
+                  }
+                  setIsCreatingProfile(true);
+                  try {
+                    const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
+                    if (created) {
+                      if (created.renderError) {
+                        setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
+                        router.push('/archive');
+                        return Alert.alert(
+                          'Plot Render Failed',
+                          'Your profile data was saved to Archive, but the plotted renderer did not complete. Open the saved card in Archive to edit or retry once the renderer is available.'
+                        );
+                      }
+                      setSaveMessage(`${created.title} saved to device. Opening the rendered preview now.`);
+                      router.push({
+                        pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
+                        params: { profileId: created.id },
+                      });
                     }
-                    setSaveMessage(`${created.title} saved to device. Opening the rendered preview now.`);
-                    router.push({
-                      pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
-                      params: { profileId: created.id },
-                    });
+                  } finally {
+                    setIsCreatingProfile(false);
                   }
                 })();
               }}
-              style={[styles.bottomCreateButton, !draft.rawNotes.trim() ? styles.buttonDisabled : null]}
-              disabled={!draft.rawNotes.trim()}>
-              <Text style={styles.bottomCreateButtonText}>Create Profile</Text>
+              style={[styles.bottomCreateButton, !draft.rawNotes.trim() || isCreatingProfile ? styles.buttonDisabled : null]}
+              disabled={!draft.rawNotes.trim() || isCreatingProfile}>
+              {isCreatingProfile ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color="#FFF8EE" />
+                  <Text style={styles.bottomCreateButtonText}>Building Profile...</Text>
+                </View>
+              ) : (
+                <Text style={styles.bottomCreateButtonText}>Create Profile</Text>
+              )}
             </Pressable>
             <Link href="/profile-preview" style={styles.link}>
               Open Preview
@@ -929,6 +979,12 @@ const styles = StyleSheet.create({
     color: '#FFF8EE',
     fontSize: 15,
     fontWeight: '800',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   buttonDisabled: {
     opacity: 0.5,
