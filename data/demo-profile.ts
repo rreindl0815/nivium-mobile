@@ -121,7 +121,6 @@ CTH27 at 102 cm
 
 Notes: Starting Zone in an East Facing avalanche path.`,
     values: {
-      ...demoManualEntryValues,
       date: 'February 19, 2026',
       time: '12:30',
       run_name: 'Test Profile 1',
@@ -252,7 +251,6 @@ CTH27 RP at 41 cm
 
 Notes: Fracture Line Profile on an old Natural Release Size 2 on a loaded convexity.`,
     values: {
-      ...demoManualEntryValues,
       date: 'January 18, 2026',
       time: '13:00',
       run_name: 'Test Profile 2',
@@ -366,7 +364,6 @@ ECTP22 at 51 cm
 
 Notes: Test Profile in a west facing regular performer TL feature.`,
     values: {
-      ...demoManualEntryValues,
       date: 'January 18, 2026',
       time: '11:00',
       run_name: 'Test Profile 3',
