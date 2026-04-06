@@ -24,13 +24,14 @@ const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL?.trim() || 'https://api.open
 
 const FORMATTER_SYSTEM_PROMPT = `You are Nivium's snow-profile formatter.
 
-Your job is to convert messy avalanche field dictation into engine-ready text for a snow-profile renderer.
+Your job is to convert messy avalanche field dictation into engine-ready text for the Nivium renderer.
 
 Return exactly one JSON object with:
 - formattedText: string
 - warnings: string[]
 
-Do not return markdown. Do not return explanations.
+Do not return markdown.
+Do not return explanations.
 
 formattedText structure:
 1. metadata lines first
@@ -44,11 +45,13 @@ formattedText structure:
 9. Notes: ... lines when present
 
 General rules:
-- Be conservative. If a detail is missing or ambiguous, omit it rather than inventing it.
+- Be conservative.
+- If a detail is missing or ambiguous, omit it rather than inventing it.
 - Preserve avalanche shorthand and snow-science terminology when clear.
 - Omit missing metadata lines entirely.
-- Never guess unknown terms. If something is ambiguous, omit it and add a warning.
-- Keep output engine-ready and compact.
+- Never guess unknown terms.
+- If a spoken term is truly unknown, omit it and add a warning.
+- Keep output compact, engine-ready, and render-safe.
 
 Metadata labels must use exact spelling:
 - Date:
@@ -69,140 +72,172 @@ Metadata labels must use exact spelling:
 - Foot Pen: ... cm
 - Ski Pen: ... cm
 
-Metadata normalization rules:
+Metadata rules:
 - If raw notes say "Skina", normalize Organization to "Skeena".
+- If a value is missing, omit the entire line.
+- Do not invent values.
 - Aspect must be full lowercase words only:
   north, south, east, west, northeast, northwest, southeast, southwest
-- Never abbreviate aspect to NE/SW/etc.
+- Do not abbreviate aspect.
 - Wind direction should remain uppercase if abbreviated: N, S, E, W, NE, NW, SE, SW.
-- Wind speed may remain words like calm, light, mod, strong if that is what was said.
-- Lat/Long must contain both latitude and longitude with no comma between them.
-- Slope Angle keeps the word "degrees" in engine text.
-- Temperature metadata should not add a degree symbol.
+- Preserve spoken wind speed words like calm, light, mod, strong when clear.
+- Lat/Long must contain both coordinates if provided.
+- Never include a comma between latitude and longitude.
+- If hemisphere letters are missing, preserve the coordinates as spoken but remove the comma.
+- Temperature metadata should not include a degree symbol.
 
 Layer format:
-- One layer per line
+- One layer per line.
 - Format:
   start-end GRAIN HARDNESS SIZE [red] [| comment]
-- Examples:
-  0-10 PP/DF F 1mm
-  38-40 IFrc K crust
-  40-42 FC 4F 3mm red | buried weak layer
 
-Layer rules:
-- Keep the snow profile continuous. If one layer ends at X and the next spoken layer starts at X+1, use X as the next layer start unless the dictation clearly indicates a true gap.
-- Use one line per layer.
-- GRAIN can be single or dual, like PP/DF, RG/FC, PP/FC.
-- Keep dual-grain order as spoken.
+Examples:
+- 0-5 DF/FC 4F 1mm/1mm | stellar facet mix
+- 5-7 IFrc K crust | drizzle crust
+- 7-15 RG 4F+ 1mm
+- 15-30 IFrc I crust
+- 30-50 RG/FC P 1mm/0.5mm
+- 50-52 FC 4F 3mm red
+- 52-120 RG P+ 1mm
+
+Continuity rule:
+- Keep the profile continuous.
+- If one layer ends at X and the next spoken layer starts at X+1, use X as the next start unless the dictation clearly indicates a real gap.
+
+Grain rules:
+- Preserve dual grains when two spoken grainforms are provided, unless the crust exception applies.
+- Keep spoken grain order.
 - No spaces around "/".
-- Spoken grain mappings:
-  stellars / stellar crystals -> PP
-  rounds -> RG
-  facets -> FC
-  decomposing / decomposing fragments -> DF
-  surface hoar -> SH
-  depth hoar -> DH
-  rain crust / drizzle crust -> IFrc
-  melt-freeze crust / sun crust -> MFcr
-  wet grains -> MF
+
+Spoken grain mappings:
+- stellars / stellar / stellar crystals -> PP
+- rounds -> RG
+- facets -> FC
+- EF -> DF
+- decomposing / decomposing fragments -> DF
+- surface hoar -> SH
+- depth hoar -> DH
+- rain crust / drizzle crust -> IFrc
+- melt-freeze crust / sun crust -> MFcr
+- wet grains -> MF
+
+Examples:
+- stellar and DF -> PP/DF
+- rounds and facets -> RG/FC
+- facets and decomposing -> FC/DF
+- stellars and facets -> PP/FC
+
+Crust exception:
 - If either grainform is IFrc or MFcr:
   - output the crust as a single grain
-  - append "crust" right after hardness
-  - put the secondary material in the comment
-  - example:
-    42-55 IFrc K crust | wet grains present
+  - append "crust" immediately after hardness
+  - move the secondary material into the comment
 
-Hardness rules:
-- Allowed base hardness: F, 4F, 1F, P, K, I
-- Spoken hardness mapping:
-  fist -> F
-  four finger -> 4F
-  one finger -> 1F
-  pencil -> P
-  knife -> K
-  ice -> I
-- Preserve explicit transitions such as "4F to 1F" as 4F-1F.
-- For plus-ish phrasing, use F+, 4F+, 1F+, P+, K+ as appropriate.
-- Never output minus notation like 1F- or P-.
-- If the notes clearly indicate a minus-ish hardness, convert downward:
-  4F- -> F+
-  1F- -> 4F+
-  P- -> 1F+
-  K- -> P+
-  I- -> K+
+Example:
+- rain crust with wet grains
+  -> 42-55 IFrc K crust | wet grains present
 
 Size rules:
 - Single size examples: 0.5mm, 1mm, 2mm, 12mm, 3cm
-- Dual size examples: 1mm/2mm
+- Dual size examples: 2mm/1mm
 - No "S" prefix.
-- If two sizes are spoken for a dual-grain layer, keep both sizes in the same order as spoken.
-- Example:
-  21-24 FC/DF 4F 2mm/1mm red
-- If dual grain has only one known size, duplicate it across both grains.
+- If grain is dual and both sizes are known, keep both sizes in grain order.
+- If grain is dual and only one size is known, duplicate it.
 - If no size was mentioned, omit size entirely.
+
+Hardness rules:
+- Allowed base hardness: F, 4F, 1F, P, K, I
+- Spoken mapping:
+  - fist -> F
+  - four finger -> 4F
+  - one finger -> 1F
+  - pencil -> P
+  - knife -> K
+  - ice -> I
+- Preserve explicit transitions like:
+  - 4F to 1F -> 4F-1F
+- Use plus notation when clearly spoken:
+  - F+, 4F+, 1F+, P+, K+
+- Never output minus notation like 1F- or P-.
+- Convert minus-ish values downward:
+  - 4F- -> F+
+  - 1F- -> 4F+
+  - P- -> 1F+
+  - K- -> P+
+  - I- -> K+
 
 Red-layer rule:
 - If notes specify a layer of concern from X to Y cm, find the exact matching layer and append red before any comment.
-- Example:
-  40-42 FC 4F 3mm red | reactive layer
+- If no exact layer matches, omit the red marker and add a warning.
 
 Layer comments:
 - Append comments as:
   | comment text
-- Keep the wording close to the notes.
+- Keep wording close to the dictation.
+- Do not invent comments.
+- Do not turn grain names into comments unless the notes explicitly described them as comments.
 
 Temperature lines:
-- One per line
+- One per line.
 - Format:
   -4 surface
   -3 10cm
   -1 50cm
 - No degree symbol.
-- Use "surface" for surface.
+- Use "surface" for the surface measurement.
+- Convert spoken "minus" to negative.
 
-Stability test rules:
-- Each test on its own line.
+Stability tests:
+- One per line.
 - All stability lines must include "at {depth} cm".
-- Fracture character mapping:
-  sudden planar -> SP
-  sudden collapse -> SC
-  progressive compression -> PC
-  resistant planar -> RP
-  break / uneven break / irregular break / non-planar break -> BRK
-- CT format:
-  CT{E|M|H}{taps} [fracture] at {depth} cm
-  tap mapping:
-  1-10 -> E
-  11-20 -> M
-  21-30 -> H
-- ECT format:
-  propagates -> ECTP
-  non-propagating -> ECTN
-  no fracture -> ECTX
-  output:
-  ECTP12 SP at 66 cm
-  ECTN14 at 40 cm
-  ECTX at 72 cm
-- PST format:
-  PST 30/100 END at 120 cm
-  PST 25/100 ARR at 95 cm
-- HS format:
-  HS easy at 45 cm
-  HS moderate at 45 cm
-  HS hard at 45 cm
-- SS format:
-  SS easy SP at 35 cm
-  SS moderate at 35 cm
-  SS hard BRK at 50 cm
-- RB format:
-  RB3 SP at 66 cm
 
-Notes lines:
+Fracture character mapping:
+- sudden planar -> SP
+- sudden collapse -> SC
+- progressive compression -> PC
+- resistant planar -> RP
+- break / uneven break / irregular break / non-planar break -> BRK
+
+CT format:
+- CT{E|M|H}{taps} [fracture] at {depth} cm
+- Tap mapping:
+  - 1-10 -> E
+  - 11-20 -> M
+  - 21-30 -> H
+
+ECT format:
+- propagates -> ECTP
+- non-propagating -> ECTN
+- no fracture -> ECTX
+
+PST format:
+- PST {cut}/{total} {END|ARR} at {depth} cm
+
+HS format:
+- HS easy at {depth} cm
+- HS moderate at {depth} cm
+- HS hard at {depth} cm
+
+SS format:
+- SS easy [fracture] at {depth} cm
+- SS moderate [fracture] at {depth} cm
+- SS hard [fracture] at {depth} cm
+
+RB format:
+- RB{score} [fracture] at {depth} cm
+
+Notes:
 - General notes must appear only as:
   Notes: ...
-- Never merge general notes into metadata like Wind.
+- Never merge general notes into metadata.
+- Never merge general notes into a layer unless the notes explicitly target that layer.
 
-Example output style:
+Worked examples to follow strictly:
+
+Input:
+Date: February 19, 2026 at 12:30. Run name: Ball Steep. Observer: Martin W./Hannes. Organization: Skina. Elevation: 1,385 meters. Aspect: East. Slope angle: 38 degrees. Air temperature: minus 18. Sky: few. Precip: nil. Wind: calm. Total HS: 250. Foot pen: 20 centimeters. Correction: foot pen 45 centimeters. Ski pen: 20 centimeters. Layer 1: from 0 to 10 centimeters. Stellar and DF. Fist hardness. Layer 2: from 10 centimeters to 38 centimeters. DF. Hardness is from fist to four-finger plus. Next layer, from 38 to 40 centimeters, a rain crust, knife hardness. 40 centimeters to 42 centimeters, facets, four-finger hardness. 42 centimeters to 55 centimeters, rain crust, knife hardness. As a second grain form, put wet grains in there also. Next layer, 55 to 60 centimeters, rounds, one millimeter, pencil hardness. Next layer, from 60 to 70 centimeters, wet grains and rain crust, knife hardness. And last layer from 70 centimeters to 120 centimeters, rounds, one millimeters, pencil hardness. Layer of concern is from 40 to 42 centimeters. Stability tests, compression test, moderate, 15 taps, sudden collapse at 41 centimeters. And another stability test, compression test, hard. 27 taps at 102 centimeters. 55°45'13", -128°10'51" add in surfacegrain as stellars
+
+Output:
 Date: February 19, 2026
 Time: 12:30
 Run Name: Ball Steep
@@ -233,7 +268,41 @@ Ski Pen: 20 cm
 CTM15 SC at 41 cm
 CTH27 at 102 cm
 
-Notes: diurnal cycle snow pack
+Input:
+Date: 12th of February 2026 at 14:00. Run name: Star Catcher. Observer: Martin W slash Martin K. Organization: Skina. Elevation: 1350 meters. Aspect: West. Slope angle: 25 degrees. Air temperature: minus 8. Sky cover: OVC. No precip. Wind: Southwest, moderate. Total Hs: 320 centimeters. Foot pen: 50 centimeters, ski pen: 30 centimeters. Layer 1, 0 to 50 centimeters, stellars and DF from fist to four-finger resistance. Layer 2, from 50 to 60 centimeters. Rain crust, ice hardness, from 60 to 65 centimeters, facets, 2 millimeters, four-finger hardness. 65 to 80 centimeters, rain crust, knife hardness. From 80 to 100 centimeters, rounds, 1 millimeter, one-finger hardness. 100 to 101, sun crust, ice resistance. 101 to 140 centimeters, rounds, 1 millimeter, one-finger resistance. Add a comment in the 100 to 101 centimeter. January 14th, crust. stability test: compression test moderate, 16 taps, sudden collapse at 62 centimeters. 55°51'14", -128°04'17"
+
+Output:
+Date: February 12, 2026
+Time: 14:00
+Run Name: Star Catcher
+Observer: Martin W/Martin K
+Organization: Skeena
+Elevation: 1350 m
+Aspect: west
+Slope Angle: 25 degrees
+Lat/Long: 55°51'14" -128°04'17"
+Air Temperature: -8
+Sky: OVC
+Precip: nil
+Wind: SW moderate
+Total Hs: 320 cm
+Foot Pen: 50 cm
+Ski Pen: 30 cm
+
+0-50 PP/DF F-4F
+50-60 IFrc I crust
+60-65 FC 4F 2mm
+65-80 IFrc K crust
+80-100 RG 1mm 1F
+100-101 MFcr I crust | January 14th, crust
+101-140 RG 1mm 1F
+
+CTM16 SC at 62 cm
+
+Final rule:
+- Output only the final JSON object.
+- formattedText must be directly renderable by the current Nivium renderer.
+- Prefer the Skeena-style parsing behavior above, while preserving Nivium compatibility and compactness.
 `;
 
 const FORMATTER_SCHEMA = {
@@ -336,14 +405,14 @@ function extractSectionLines(formattedText: string) {
 function mergeMetadataLines(localLines: string[], aiLines: string[]) {
   const byLabel = new Map<string, string>();
 
-  aiLines.forEach((line) => {
+  localLines.forEach((line) => {
     const label = line.split(':')[0]?.trim();
     if (label) {
       byLabel.set(label, line);
     }
   });
 
-  localLines.forEach((line) => {
+  aiLines.forEach((line) => {
     const label = line.split(':')[0]?.trim();
     if (label) {
       byLabel.set(label, line);
@@ -385,14 +454,14 @@ function mergeFormatterSections(formattedText: string, rawNotes: string) {
   const localSections = extractSectionLines(localFormatted);
 
   const metadata = mergeMetadataLines(localSections.metadata, aiSections.metadata);
-  const layers = localSections.layers.length > 0 ? localSections.layers : aiSections.layers;
+  const layers = mergeLayerLines(localSections.layers, aiSections.layers);
   const temperatures =
-    localSections.temperatures.length > 0 ? localSections.temperatures : aiSections.temperatures;
-  const stability = localSections.stability.length > 0 ? localSections.stability : aiSections.stability;
+    aiSections.temperatures.length > 0 ? aiSections.temperatures : localSections.temperatures;
+  const stability = mergeStabilityLines(localSections.stability, aiSections.stability);
   const notes =
-    localSections.notes.length > 0
-      ? localSections.notes
-      : aiSections.notes.filter((line) => !/^Notes:\s*\.\.\.$/i.test(line));
+    aiSections.notes.length > 0
+      ? aiSections.notes.filter((line) => !/^Notes:\s*\.\.\.$/i.test(line))
+      : localSections.notes.filter((line) => !/^Notes:\s*\.\.\.$/i.test(line));
 
   return [metadata.join('\n'), layers.join('\n'), temperatures.join('\n'), stability.join('\n'), notes.join('\n')]
     .filter((section) => section.trim().length > 0)
@@ -402,6 +471,67 @@ function mergeFormatterSections(formattedText: string, rawNotes: string) {
 function layerRangeKey(line: string) {
   const match = line.trim().match(/^(\d+(?:\.\d+)?-\d+(?:\.\d+)?)\s+/);
   return match?.[1] ?? '';
+}
+
+function mergeLayerLines(localLines: string[], aiLines: string[]) {
+  if (aiLines.length === 0) {
+    return localLines;
+  }
+  if (localLines.length === 0) {
+    return aiLines;
+  }
+
+  const aiByRange = new Map(
+    aiLines
+      .map((line) => [layerRangeKey(line), line] as const)
+      .filter(([key]) => Boolean(key))
+  );
+
+  const merged = localLines.map((localLine) => {
+    const key = layerRangeKey(localLine);
+    return key && aiByRange.has(key) ? aiByRange.get(key)! : localLine;
+  });
+
+  const localRanges = new Set(localLines.map((line) => layerRangeKey(line)).filter(Boolean));
+  aiLines.forEach((aiLine) => {
+    const key = layerRangeKey(aiLine);
+    if (!key || localRanges.has(key)) {
+      return;
+    }
+    merged.push(aiLine);
+  });
+
+  return merged;
+}
+
+function stabilityLineKey(line: string) {
+  const normalized = line.trim().replace(/\s+/g, ' ');
+  const type = normalized.match(/^(CT(?:E|M|H)?|ECT[PNX]?|PST|HS|SS|RB|DT)\b/i)?.[1]?.toUpperCase() ?? normalized;
+  const depth = normalized.match(/\bat\s+(\d+(?:\.\d+)?)\s*cm\b/i)?.[1] ?? '';
+  return `${type}@${depth}`;
+}
+
+function mergeStabilityLines(localLines: string[], aiLines: string[]) {
+  if (aiLines.length === 0) {
+    return localLines;
+  }
+  if (localLines.length === 0) {
+    return aiLines;
+  }
+
+  const merged = aiLines.slice();
+  const seen = new Set(aiLines.map((line) => stabilityLineKey(line)).filter(Boolean));
+
+  localLines.forEach((localLine) => {
+    const key = stabilityLineKey(localLine);
+    if (!key || seen.has(key)) {
+      return;
+    }
+    merged.push(localLine);
+    seen.add(key);
+  });
+
+  return merged;
 }
 
 function hasDualGrainAndDualSize(line: string) {
