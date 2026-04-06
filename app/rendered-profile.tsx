@@ -6,6 +6,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 import { useAppAccess } from '@/context/app-access-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
+import { parseFormattedProfile } from '@/utils/profile-document';
 
 export default function RenderedProfileScreen() {
   const router = useRouter();
@@ -26,6 +27,21 @@ export default function RenderedProfileScreen() {
   const modalMaxHeight = screenHeight - 120;
   const modalPreviewWidth = Math.min(modalMaxWidth, modalMaxHeight / 1.4286);
   const modalPreviewHeight = modalPreviewWidth * 1.4286;
+  const parsedProfile = activeProfile?.formattedText ? parseFormattedProfile(activeProfile.formattedText) : null;
+  const previewFileName = activeProfile?.previewImageUri?.split('/').pop() ?? 'missing';
+  const createdStamp = activeProfile?.createdAt
+    ? new Date(activeProfile.createdAt).toLocaleString()
+    : 'missing';
+  const rawStabilitySnippet = (() => {
+    const raw = activeProfile?.rawNotes ?? '';
+    if (!raw.trim()) {
+      return 'missing';
+    }
+    const match = raw.match(/(stability test[\s\S]*?)(?:\d{1,3}[°º]?\s*\d{1,2}'\d{1,2}"?|$)/i);
+    return (match?.[1] ?? raw.slice(Math.max(0, raw.toLowerCase().indexOf('stability')), raw.length))
+      .replace(/\s+/g, ' ')
+      .trim() || 'missing';
+  })();
 
   const handlePaidAction = (label: string, route: '/archive' | '/print' | '/share') => {
     if (isPaid) {
@@ -268,6 +284,27 @@ export default function RenderedProfileScreen() {
                 </Text>
               </View>
             )}
+            {activeProfile ? (
+              <View style={styles.debugPanel}>
+                <Text style={styles.debugTitle}>Debug</Text>
+                <Text style={styles.debugLine}>ID: {activeProfile.id}</Text>
+                <Text style={styles.debugLine}>Created: {createdStamp}</Text>
+                <Text style={styles.debugLine}>Preview: {previewFileName}</Text>
+                <Text style={styles.debugLine}>Source: {activeProfile.sourceKind ?? 'missing'}</Text>
+                {activeProfile.renderError ? <Text style={styles.debugLine}>RenderError: {activeProfile.renderError}</Text> : null}
+                <Text style={styles.debugLine}>Raw stability: {rawStabilitySnippet}</Text>
+                <Text style={styles.debugLine}>Tests: {parsedProfile?.stabilityTests.length ?? 0}</Text>
+                {parsedProfile?.stabilityTests.length ? (
+                  parsedProfile.stabilityTests.map((line) => (
+                    <Text key={line} style={styles.debugLine}>
+                      {line}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.debugLine}>No stability lines parsed from saved formattedText.</Text>
+                )}
+              </View>
+            ) : null}
           </View>
         </View>
       </ScrollView>
@@ -417,6 +454,27 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
     textTransform: 'uppercase',
+  },
+  debugPanel: {
+    marginTop: 10,
+    marginHorizontal: 12,
+    marginBottom: 14,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(4, 14, 24, 0.82)',
+    gap: 4,
+  },
+  debugTitle: {
+    color: '#9FD0FF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  debugLine: {
+    color: '#D8E6F0',
+    fontSize: 11,
+    lineHeight: 15,
   },
   sectionLabel: {
     color: '#B7CCD8',

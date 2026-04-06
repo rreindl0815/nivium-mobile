@@ -317,7 +317,16 @@ function buildStructuredTemperatureBlock(values: ProfileDraft['values']) {
 function normalizeStabilityBlock(value: string) {
   return value
     .split('\n')
-    .map((line) => normalizeStabilityLine(line))
+    .flatMap((line) =>
+      normalizeStabilityLine(line)
+        .replace(
+          /\b(at\s+\d+(?:\.\d+)?\s*cm)\s+and a\s+(?=(?:CT(?:E|M|H)?\d*|ECT[PNX]?\d*|PST|HS|SS|RB\d*|DT\d*)\b)/gi,
+          '$1\n'
+        )
+        .split('\n')
+        .map((part) => part.trim())
+        .filter(Boolean)
+    )
     .filter(Boolean)
     .join('\n');
 }
