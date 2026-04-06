@@ -489,7 +489,14 @@ function mergeLayerLines(localLines: string[], aiLines: string[]) {
 
   const merged = localLines.map((localLine) => {
     const key = layerRangeKey(localLine);
-    return key && aiByRange.has(key) ? aiByRange.get(key)! : localLine;
+    if (!key || !aiByRange.has(key)) {
+      return localLine;
+    }
+    const aiLine = aiByRange.get(key)!;
+    if (/\bEF\b/.test(aiLine) && !/\bEF\b/.test(localLine)) {
+      return localLine;
+    }
+    return aiLine;
   });
 
   const localRanges = new Set(localLines.map((line) => layerRangeKey(line)).filter(Boolean));
@@ -511,6 +518,10 @@ function stabilityLineKey(line: string) {
   return `${type}@${depth}`;
 }
 
+function stabilityDepth(line: string) {
+  return line.trim().replace(/\s+/g, ' ').match(/\bat\s+(\d+(?:\.\d+)?)\s*cm\b/i)?.[1] ?? '';
+}
+
 function mergeStabilityLines(localLines: string[], aiLines: string[]) {
   if (aiLines.length === 0) {
     return localLines;
@@ -519,8 +530,25 @@ function mergeStabilityLines(localLines: string[], aiLines: string[]) {
     return aiLines;
   }
 
-  const merged = aiLines.slice();
-  const seen = new Set(aiLines.map((line) => stabilityLineKey(line)).filter(Boolean));
+  const localByDepth = new Map(
+    localLines
+      .map((line) => [stabilityDepth(line), line] as const)
+      .filter(([depth]) => Boolean(depth))
+  );
+
+  const merged = aiLines.filter((aiLine) => {
+    const depth = stabilityDepth(aiLine);
+    if (!depth) {
+      return true;
+    }
+    const localLine = localByDepth.get(depth);
+    if (!localLine) {
+      return true;
+    }
+    return stabilityLineKey(aiLine) === stabilityLineKey(localLine);
+  });
+
+  const seen = new Set(merged.map((line) => stabilityLineKey(line)).filter(Boolean));
 
   localLines.forEach((localLine) => {
     const key = stabilityLineKey(localLine);
