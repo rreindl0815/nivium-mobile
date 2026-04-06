@@ -582,6 +582,17 @@ function extractStabilityLines(rawNotes: string) {
       .replace(/^stability test[: ]*/i, '')
       .trim();
 
+    const candidateLines = splitCompoundStabilitySentence(cleaned);
+    if (
+      candidateLines.length > 0 &&
+      candidateLines.every((candidate) =>
+        /\b(compression test|extended column test|propagation saw test|shear test|shovel shear|hand shear|CT|SS|HS|ECT|PST|RB)\b/i.test(candidate)
+      )
+    ) {
+      results.push(...candidateLines);
+      return;
+    }
+
     if (/\b(compression test|extended column test|propagation saw test|shear test|shovel shear|hand shear|CT|SS|HS|ECT|PST|RB)\b/i.test(cleaned)) {
       results.push(cleaned);
       return;
@@ -593,6 +604,22 @@ function extractStabilityLines(rawNotes: string) {
   });
 
   return results;
+}
+
+function splitCompoundStabilitySentence(value: string) {
+  const splitReady = value
+    .replace(
+      /\b(?:and|also)\s+a\s+(?=(?:compression test|extended column test|propagation saw test|shear test|shovel shear|hand shear)\b)/gi,
+      '. '
+    )
+    .replace(/\b(?:and|also)\s+(?=(?:CT|SS|HS|ECT|PST|RB)\b)/gi, '. ')
+    .replace(/\s+\.\s+/g, '. ')
+    .trim();
+
+  return splitReady
+    .split('.')
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function extractGeneralNotes(rawNotes: string) {
