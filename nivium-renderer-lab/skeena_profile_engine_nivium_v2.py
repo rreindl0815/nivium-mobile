@@ -1554,40 +1554,46 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
             return center >= anchor_y_px - 1.0
         return True
 
+    def _render_thin_callout_group(requests):
+        last_assigned_center = None
+        for txt, anchor_y_px, preferred_side, _max_height_px, _priority in requests:
+            viable = []
+            fallback_viable = []
+            for band in comment_bands:
+                for seg_st, seg_sb in _free_segments_for_band(band):
+                    block_h = _callout_metrics_for_height(txt, seg_sb - seg_st)
+                    if block_h <= (seg_sb - seg_st):
+                        center = (seg_st + seg_sb) / 2.0
+                        edge_distance = min(abs(seg_st - anchor_y_px), abs(seg_sb - anchor_y_px))
+                        candidate = (abs(center - anchor_y_px), edge_distance, band, seg_st, seg_sb, block_h)
+                        fallback_viable.append(candidate)
+                        if _segment_matches_side(seg_st, seg_sb, anchor_y_px, preferred_side):
+                            viable.append(candidate)
+            if not viable:
+                viable = fallback_viable
+            if viable:
+                ordered_viable = sorted(viable, key=lambda t: t[0])
+                chosen = None
+                if last_assigned_center is not None:
+                    for candidate in ordered_viable:
+                        center = (candidate[3] + candidate[4]) / 2.0
+                        if center >= last_assigned_center - 1.0:
+                            chosen = candidate
+                            break
+                if chosen is None:
+                    chosen = ordered_viable[0]
+                _, _, band, seg_st, seg_sb, _block_h = chosen
+                seed_y = seg_st
+                draw_callout(txt, anchor_y_px, "below", seg_sb - seg_st, y_top_override=(seg_st, seg_sb, seed_y))
+                last_assigned_center = (seg_st + seg_sb) / 2.0
+            else:
+                draw_callout(txt, anchor_y_px, "below", max(12.0, _line_pad * 2.0))
+
     ordered_requests = sorted(thin_callout_requests, key=lambda r: (r[1], r[4]))
-    last_assigned_center = None
-    for txt, anchor_y_px, preferred_side, _max_height_px, _priority in ordered_requests:
-        viable = []
-        fallback_viable = []
-        for band in comment_bands:
-            for seg_st, seg_sb in _free_segments_for_band(band):
-                block_h = _callout_metrics_for_height(txt, seg_sb - seg_st)
-                if block_h <= (seg_sb - seg_st):
-                    center = (seg_st + seg_sb) / 2.0
-                    edge_distance = min(abs(seg_st - anchor_y_px), abs(seg_sb - anchor_y_px))
-                    candidate = (abs(center - anchor_y_px), edge_distance, band, seg_st, seg_sb, block_h)
-                    fallback_viable.append(candidate)
-                    if _segment_matches_side(seg_st, seg_sb, anchor_y_px, preferred_side):
-                        viable.append(candidate)
-        if not viable:
-            viable = fallback_viable
-        if viable:
-            ordered_viable = sorted(viable, key=lambda t: t[0])
-            chosen = None
-            if last_assigned_center is not None:
-                for candidate in ordered_viable:
-                    center = (candidate[3] + candidate[4]) / 2.0
-                    if center >= last_assigned_center - 1.0:
-                        chosen = candidate
-                        break
-            if chosen is None:
-                chosen = ordered_viable[0]
-            _, _, band, seg_st, seg_sb, _block_h = chosen
-            seed_y = seg_st
-            draw_callout(txt, anchor_y_px, "below", seg_sb - seg_st, y_top_override=(seg_st, seg_sb, seed_y))
-            last_assigned_center = (seg_st + seg_sb) / 2.0
-        else:
-            draw_callout(txt, anchor_y_px, "below", max(12.0, _line_pad * 2.0))
+    stab_requests = [request for request in ordered_requests if request[4] == 0]
+    layer_requests = [request for request in ordered_requests if request[4] != 0]
+    _render_thin_callout_group(stab_requests)
+    _render_thin_callout_group(layer_requests)
 
 
     # Stability tests that are NOT within a thin layer: render as standalone callouts
