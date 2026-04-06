@@ -176,6 +176,7 @@ Layer comments:
 - Keep wording close to the dictation.
 - Do not invent comments.
 - Do not turn grain names into comments unless the notes explicitly described them as comments.
+- Never output a literal comment like "layer of concern"; mark the matching layer red instead.
 
 Temperature lines:
 - One per line.
@@ -494,6 +495,9 @@ function mergeLayerLines(localLines: string[], aiLines: string[]) {
     }
     const aiLine = aiByRange.get(key)!;
     if (/\bEF\b/.test(aiLine) && !/\bEF\b/.test(localLine)) {
+      return localLine;
+    }
+    if (/\blayer of concern\b/i.test(aiLine) && !/\blayer of concern\b/i.test(localLine)) {
       return localLine;
     }
     return aiLine;
