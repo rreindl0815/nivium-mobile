@@ -461,8 +461,8 @@ function mergeFormatterSections(formattedText: string, rawNotes: string) {
   const stability = mergeStabilityLines(localSections.stability, aiSections.stability);
   const notes =
     aiSections.notes.length > 0
-      ? aiSections.notes.filter((line) => !/^Notes:\s*\.\.\.$/i.test(line))
-      : localSections.notes.filter((line) => !/^Notes:\s*\.\.\.$/i.test(line));
+      ? sanitizeNotes(aiSections.notes)
+      : sanitizeNotes(localSections.notes);
 
   return [metadata.join('\n'), layers.join('\n'), temperatures.join('\n'), stability.join('\n'), notes.join('\n')]
     .filter((section) => section.trim().length > 0)
@@ -476,19 +476,20 @@ function layerRangeKey(line: string) {
 
 function mergeLayerLines(localLines: string[], aiLines: string[]) {
   if (aiLines.length === 0) {
-    return localLines;
+    return localLines.map(sanitizeLayerLine);
   }
   if (localLines.length === 0) {
-    return aiLines;
+    return aiLines.map(sanitizeLayerLine);
   }
 
   const aiByRange = new Map(
     aiLines
-      .map((line) => [layerRangeKey(line), line] as const)
+      .map((line) => [layerRangeKey(line), sanitizeLayerLine(line)] as const)
       .filter(([key]) => Boolean(key))
   );
 
-  const merged = localLines.map((localLine) => {
+  const merged = localLines.map((localLineRaw) => {
+    const localLine = sanitizeLayerLine(localLineRaw);
     const key = layerRangeKey(localLine);
     if (!key || !aiByRange.has(key)) {
       return localLine;
@@ -503,8 +504,9 @@ function mergeLayerLines(localLines: string[], aiLines: string[]) {
     return aiLine;
   });
 
-  const localRanges = new Set(localLines.map((line) => layerRangeKey(line)).filter(Boolean));
-  aiLines.forEach((aiLine) => {
+  const localRanges = new Set(localLines.map((line) => layerRangeKey(sanitizeLayerLine(line))).filter(Boolean));
+  aiLines.forEach((aiLineRaw) => {
+    const aiLine = sanitizeLayerLine(aiLineRaw);
     const key = layerRangeKey(aiLine);
     if (!key || localRanges.has(key)) {
       return;
@@ -527,20 +529,23 @@ function stabilityDepth(line: string) {
 }
 
 function mergeStabilityLines(localLines: string[], aiLines: string[]) {
-  if (aiLines.length === 0) {
-    return localLines;
+  const sanitizedLocalLines = localLines.filter((line) => !isMalformedPseudoStability(line));
+  const sanitizedAiLines = aiLines.filter((line) => !isMalformedPseudoStability(line));
+
+  if (sanitizedAiLines.length === 0) {
+    return sanitizedLocalLines;
   }
-  if (localLines.length === 0) {
-    return aiLines;
+  if (sanitizedLocalLines.length === 0) {
+    return sanitizedAiLines;
   }
 
   const localByDepth = new Map(
-    localLines
+    sanitizedLocalLines
       .map((line) => [stabilityDepth(line), line] as const)
       .filter(([depth]) => Boolean(depth))
   );
 
-  const merged = aiLines.filter((aiLine) => {
+  const merged = sanitizedAiLines.filter((aiLine) => {
     const depth = stabilityDepth(aiLine);
     if (!depth) {
       return true;
@@ -554,7 +559,7 @@ function mergeStabilityLines(localLines: string[], aiLines: string[]) {
 
   const seen = new Set(merged.map((line) => stabilityLineKey(line)).filter(Boolean));
 
-  localLines.forEach((localLine) => {
+  sanitizedLocalLines.forEach((localLine) => {
     const key = stabilityLineKey(localLine);
     if (!key || seen.has(key)) {
       return;
@@ -564,6 +569,32 @@ function mergeStabilityLines(localLines: string[], aiLines: string[]) {
   });
 
   return merged;
+}
+
+function sanitizeLayerLine(line: string) {
+  let sanitized = line.replace(/\bEF\b/gi, 'DF');
+  if (!/\blayer of concern\b/i.test(sanitized)) {
+    return sanitized;
+  }
+
+  const [mainPart, commentPart] = sanitized.split('|');
+  const main = mainPart.replace(/\blayer of concern\b/gi, '').replace(/\s+/g, ' ').trim();
+  const comment = (commentPart ?? '').replace(/\blayer of concern\b/gi, '').replace(/\s+/g, ' ').trim();
+  const needsRed = !/\bred\b/i.test(main);
+  const rebuiltMain = `${main}${needsRed ? ' red' : ''}`.replace(/\s+/g, ' ').trim();
+  return [rebuiltMain, comment ? `| ${comment}` : ''].filter(Boolean).join(' ').trim();
+}
+
+function isMalformedPseudoStability(line: string) {
+  const normalized = line.trim().replace(/\s+/g, ' ');
+  const looksLikeDepthLine = /\bat\s+\d+(?:\.\d+)?\s*cm\b/i.test(normalized);
+  const hasFracture = /\b(SC|SP|RP|PC|BRK)\b/i.test(normalized);
+  const isValidPrefix = /^(CT(?:E|M|H)?\d*|ECT[PNX]?\d*|PST|HS|SS|RB\d*|DT\d*)\b/i.test(normalized);
+  return looksLikeDepthLine && hasFracture && !isValidPrefix;
+}
+
+function sanitizeNotes(lines: string[]) {
+  return lines.filter((line) => !/^Notes:\s*\.\.\.$/i.test(line) && !isMalformedPseudoStability(line));
 }
 
 function hasDualGrainAndDualSize(line: string) {

@@ -257,7 +257,7 @@ class ProfileData:
 
 GRAIN_MAP = {
     "pp":"PP","pps":"PP","ppp":"PP","stellars":"PP","stellar":"PP","ppsd":"PP",
-    "df":"DF","decomposing":"DF","decomposing fragments":"DF","fragments":"DF",
+    "df":"DF","ef":"DF","decomposing":"DF","decomposing fragments":"DF","fragments":"DF",
     "rg":"RG","rgs":"RG","rounds":"RG","rounded":"RG","round":"RG",
     "fc":"FC","facets":"FC","faceted":"FC","facet":"FC",
     "fcxr":"FCxr","rounding facets":"FCxr","rounding facet":"FCxr",
