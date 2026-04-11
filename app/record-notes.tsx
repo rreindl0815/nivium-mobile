@@ -1,6 +1,6 @@
 import { memo, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
 import { useProfileDraft } from '@/context/profile-draft-context';
@@ -65,13 +65,12 @@ export default function RecordNotesScreen() {
   const { isPaid } = useAppAccess();
   const { draft, setRawNotes } = useProfileDraft();
   const { createProfileFromDraft } = useSavedProfiles();
-  const [isDictationView, setIsDictationView] = useState(true);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
-  const compact = isDictationView;
+  const compact = true;
 
   useEffect(() => {
     if (!isPaid) {
-      router.replace({ pathname: '/upgrade', params: { feature: 'Record Notes', returnTo: '/record-notes' } });
+      router.replace({ pathname: '/upgrade', params: { feature: 'Voice Notes', returnTo: '/record-notes' } });
     }
   }, [isPaid, router]);
 
@@ -97,23 +96,11 @@ export default function RecordNotesScreen() {
             <View style={styles.cardAccent} />
             <Text style={styles.cardEyebrow}>Capture</Text>
             <Text style={styles.cardTitle}>Voice Notes</Text>
-            <View style={styles.modeRow}>
-              <Pressable
-                onPress={() => setIsDictationView(true)}
-                style={[styles.modeChip, isDictationView ? styles.modeChipActive : null]}>
-                <Text style={[styles.modeChipText, isDictationView ? styles.modeChipTextActive : null]}>Voice View</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setIsDictationView(false)}
-                style={[styles.modeChip, !isDictationView ? styles.modeChipActive : null]}>
-                <Text style={[styles.modeChipText, !isDictationView ? styles.modeChipTextActive : null]}>Edit View</Text>
-              </Pressable>
-            </View>
             <TextInput
               multiline
               value={draft.rawNotes}
               onChangeText={setRawNotes}
-              placeholder="🎙 activate your phone mic and speak your voice notes by reading aloud through the fieldcard below."
+              placeholder="🎙 Activate your phone mic and speak your voice notes by reading aloud through the field card below."
               placeholderTextColor="#546878"
               style={[styles.input, compact ? styles.inputFocused : null]}
               textAlignVertical="top"
@@ -191,9 +178,9 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
         {compact ? null : (
           <>
             <View style={styles.cardAccent} />
-            <Text style={styles.cardEyebrow}>Fieldcard</Text>
-            <Text style={styles.cardTitle}>Follow Fieldcard For Voice Notes</Text>
-            <Text style={styles.cardCopy}>Read through the fieldcard aloud and fill in the blanks.</Text>
+            <Text style={styles.cardEyebrow}>Field Card</Text>
+            <Text style={styles.cardTitle}>Follow Field Card for Voice Notes</Text>
+            <Text style={styles.cardCopy}>Read through the field card aloud and fill in the blanks.</Text>
           </>
         )}
         <ScrollView
@@ -356,32 +343,6 @@ const styles = StyleSheet.create({
     color: '#55626A',
     fontSize: 16,
     lineHeight: 23,
-  },
-  modeRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  modeChip: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    backgroundColor: '#D7E0E8',
-    borderWidth: 1,
-    borderColor: '#31495C',
-  },
-  modeChipActive: {
-    backgroundColor: '#20384D',
-    borderColor: '#20384D',
-  },
-  modeChipText: {
-    color: '#20384D',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  modeChipTextActive: {
-    color: '#FFF8EE',
   },
   input: {
     minHeight: 244,
