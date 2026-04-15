@@ -27,7 +27,12 @@ export default function UpgradeScreen() {
             return;
           }
           router.replace('/');
+          return;
         }
+        Alert.alert(
+          'Paid Access Not Active Yet',
+          'No active paid entitlement was found yet. Please complete purchase or tap Restore Purchases.'
+        );
       } catch {
         Alert.alert('Unable To Open Paywall', 'Please try again in a moment.');
       }
@@ -315,5 +320,6 @@ const styles = StyleSheet.create({
     color: '#20384D',
     fontSize: 16,
     fontWeight: '700',
+    textAlign: 'center',
   },
 });
