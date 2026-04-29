@@ -777,7 +777,6 @@ function normalizeStabilityFormatting(line: string) {
   return line
     .trim()
     .replace(/\bIn\s+a\s+PST\s+(\d+(?:\.\d+)?)\s*(?:\/|over)\s*(\d+(?:\.\d+)?)\s+and\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 END at $3 cm')
-    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s*(?:\/|over)\s*(\d+(?:\.\d+)?)\s+and\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 END at $3 cm')
     .replace(/\bPST\s+(\d+(?:\.\d+)?)\s+over\s+(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
     .replace(/\bECTP\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
     .replace(/\b(ECT[PNX])\s+(\d{1,2})\b/i, '$1$2')
@@ -803,8 +802,6 @@ function cleanupStabilityFalsePositives(lines: string[], rawNotes?: string) {
   const hasCt = normalized.some((line) => /^CT(?:E|M|H)\d+\b/i.test(line));
   const hasPst = normalized.some((line) => /^PST\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?\s+(?:END|ARR|SF)\s+at\s+\d+(?:\.\d+)?\s*cm\b/i.test(line));
   const rawMentionsPst = /\bpropagation\s+saw\s+test\b|\bPST\b/i.test(rawNotes ?? '');
-  const rawMentionsCt = /\bcompression\s+test\b|\bCT\b/i.test(rawNotes ?? '');
-  const rawMentionsEct = /\bECT\b|\bextended\s+column\b/i.test(rawNotes ?? '');
 
   const filtered = normalized.filter((line) => {
     const compact = line.trim();
@@ -812,7 +809,6 @@ function cleanupStabilityFalsePositives(lines: string[], rawNotes?: string) {
     if (/^ECT[PNX]?\d*$/i.test(compact)) return false;
     if (hasCt && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
     if ((hasPst || rawMentionsPst) && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
-    if (rawMentionsCt && !rawMentionsEct && /^ECT[PNX]?\d*(?:\s+at\s+\d+(?:\.\d+)?\s*cm)?$/i.test(compact)) return false;
     return true;
   });
 
@@ -2002,7 +1998,6 @@ function collectHardnessCueByBottom(rawNotes?: string) {
   let lastLayerBottom: number | null = null;
   let lastLayerClauseIndex = -9999;
   const firstMentionByBottom = new Map<number, string>();
-  const pendingTransitionCueByBottom = new Map<number, number>();
 
   for (let i = 0; i < clauses.length; i += 1) {
     const clause = clauses[i];
@@ -2017,7 +2012,7 @@ function collectHardnessCueByBottom(rawNotes?: string) {
     const normalized = clause.toLowerCase();
     const targetBottom = Number.isFinite(bottom)
       ? bottom
-      : lastLayerBottom !== null && i - lastLayerClauseIndex <= 8
+      : lastLayerBottom !== null && i - lastLayerClauseIndex <= 2
         ? lastLayerBottom
         : NaN;
     if (!Number.isFinite(targetBottom)) {
@@ -2030,10 +2025,6 @@ function collectHardnessCueByBottom(rawNotes?: string) {
       /\bhardness\s*2\b/.test(normalized) ||
       /\bhardness\s*two\b/.test(normalized) ||
       /\bsecond\s+hardness\b/.test(normalized);
-
-    if (hasTransitionCue) {
-      pendingTransitionCueByBottom.set(targetBottom, i);
-    }
 
     if (spokenMentions.length > 0 && !firstMentionByBottom.has(targetBottom)) {
       firstMentionByBottom.set(targetBottom, spokenMentions[0]);
@@ -2060,20 +2051,6 @@ function collectHardnessCueByBottom(rawNotes?: string) {
       if (first && second && first !== second) {
         overrides.set(targetBottom, `${first}-${second}`);
         continue;
-      }
-    }
-
-    // Cross-clause transition recovery:
-    // "pencil hardness, hardness 2, one finger plus" often arrives as separate clauses.
-    if (spokenMentions.length === 1 && !hasTransitionCue) {
-      const cueIndex = pendingTransitionCueByBottom.get(targetBottom);
-      if (cueIndex !== undefined && i - cueIndex <= 3) {
-        const first = firstMentionByBottom.get(targetBottom) ?? '';
-        const second = spokenMentions[0];
-        if (first && second && first !== second) {
-          overrides.set(targetBottom, `${first}-${second}`);
-          continue;
-        }
       }
     }
 
@@ -2179,68 +2156,8 @@ type ValidatedLayerLine = {
   bottom: number;
 };
 
-function canonicalizeLayerLine(line: string) {
-  const normalized = line.trim().replace(/\s+/g, ' ');
-  const split = normalized.split('|');
-  const main = split[0]?.trim() ?? '';
-  const comment = split.slice(1).join('|').trim();
-  const rangeMatch = main.match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)(?:\s+|$)/);
-  if (!rangeMatch) {
-    return normalized;
-  }
-
-  const range = `${rangeMatch[1]}-${rangeMatch[2]}`;
-  const rawTail = main.slice(rangeMatch[0].length).trim();
-  const tokens = rawTail.split(' ').map((t) => t.trim()).filter(Boolean);
-  if (tokens.length === 0) {
-    return normalized;
-  }
-
-  const hasRed = tokens.some((t) => /^red$/i.test(t));
-  let hasCrust = tokens.some((t) => /^crust$/i.test(t));
-  const size = tokens.find((t) => isSizeToken(t)) ?? '';
-  const hardness = tokens.find((t) => isLayerHardnessToken(t)) ?? '';
-
-  const grainParts: string[] = [];
-  for (const token of tokens) {
-    if (LAYER_GRAIN_TOKEN.test(token)) {
-      grainParts.push(token);
-      continue;
-    }
-    const normalizedGrain = normalizeLayerGrainFromTokens([token]);
-    if (normalizedGrain && LAYER_GRAIN_TOKEN.test(normalizedGrain)) {
-      grainParts.push(normalizedGrain);
-    }
-  }
-
-  let grain = '';
-  if (grainParts.length > 0) {
-    const first = grainParts[0];
-    if (first.includes('/')) {
-      grain = first;
-    } else if (grainParts.length > 1) {
-      grain = `${grainParts[0]}/${grainParts[1]}`;
-    } else {
-      grain = first;
-    }
-  }
-  if (!grain) {
-    grain = 'RG';
-  }
-
-  if (/^(IFrc|MFcr)$/i.test(grain)) {
-    hasCrust = true;
-  }
-  const canonicalHardness = hardness || (/^(IFrc|MFcr)$/i.test(grain) ? 'K' : '1F');
-  const mainParts = [range, grain, canonicalHardness, hasCrust ? 'crust' : '', size, hasRed ? 'red' : ''].filter(Boolean);
-  if (!comment) {
-    return mainParts.join(' ');
-  }
-  return `${mainParts.join(' ')} | ${comment}`;
-}
-
 function parseAndValidateLayerLine(line: string): ValidatedLayerLine {
-  const normalized = canonicalizeLayerLine(line);
+  const normalized = line.trim().replace(/\s+/g, ' ');
   const split = normalized.split('|');
   const main = split[0]?.trim() ?? '';
   if (!main) {
@@ -2289,7 +2206,7 @@ function parseAndValidateLayerLine(line: string): ValidatedLayerLine {
   }
 
   return {
-    line: normalized,
+    line,
     top: range.top,
     bottom: range.bottom,
   };
@@ -2315,8 +2232,6 @@ function validateLayerBlockOrThrow(lines: string[]) {
 
     previousBottom = layer.bottom;
   }
-
-  return validated.map((layer) => layer.line);
 }
 
 function isLayerValidationError(error: unknown) {
@@ -2336,11 +2251,23 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
     }
     return `Total Hs: ${totalHs.replace(/[^\d.]/g, '')} cm`;
   });
-  // SPE-style controlled flow:
-  // 1) trust single AI formatter authority
-  // 2) only canonicalize + validate, no cross-layer "smart merge" rewrites
-  const authoritativeLayers = sanitizeAiLayerLines(sections.layers);
-  const canonicalLayers = validateLayerBlockOrThrow(authoritativeLayers);
+  const layers = applyImplicitConcernCue(
+    applyResolvedRedHints(
+      applyRawNotesTransitionHints(
+        applyResolvedLayerTransitionHints(sanitizeAiLayerLines(sections.layers), resolvedValues),
+        rawNotes
+      ),
+      resolvedValues
+    ),
+    rawNotes
+  );
+  const layersWithInlineCues = applyInlineRedCueByBottom(
+    applyFacetsCueByBottom(applyHardnessCueByBottom(applySurfaceHoarByBottom(layers, rawNotes), rawNotes), rawNotes),
+    rawNotes
+  );
+  const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
+  const layersWithCleanComments = sanitizeLayerComments(layersWithSizeHints);
+  validateLayerBlockOrThrow(layersWithCleanComments);
   const stability = sections.stability
     .filter((line) => !isMalformedPseudoStability(line))
     .filter((line) => isCompleteStabilityLine(line));
@@ -2352,7 +2279,7 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
 
   return [
     metadataLines.join('\n'),
-    canonicalLayers.join('\n'),
+    layersWithCleanComments.join('\n'),
     sections.temperatures.join('\n'),
     normalizedStability.join('\n'),
     notes.join('\n'),
