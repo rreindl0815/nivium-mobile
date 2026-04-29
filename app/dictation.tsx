@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 
 import { AccordionSection } from '@/components/accordion-section';
-import { useAppAccess } from '@/context/app-access-context';
 import { useProfileDraft } from '@/context/profile-draft-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { demoManualEntryProfiles, demoManualEntryValues, demoRawNotes } from '@/data/demo-profile';
@@ -112,11 +111,9 @@ async function persistSampleVault(entries: SampleLibraryEntry[]) {
 
 export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' }) {
   const router = useRouter();
-  const { isPaid } = useAppAccess();
   const params = useLocalSearchParams<{ mode?: string }>();
   const entryMode = mode ?? (params.mode === 'manual' ? 'manual' : 'record');
   const isManualMode = entryMode === 'manual';
-  const hasVoiceAccess = __DEV__ || isPaid;
   const [openSectionId, setOpenSectionId] = useState<string | null>(isManualMode ? null : 'metadata');
   const [sampleLibrary, setSampleLibrary] = useState<SampleLibraryEntry[]>([]);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
@@ -128,7 +125,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
   const layerCardOffsetsRef = useRef<Record<number, number>>({});
   const {
     draft,
-    setRawNotesFromVoiceInput,
+    setRawNotes,
     replaceFieldValues,
     loadFreshRawNotes,
     loadFreshDraft,
@@ -139,12 +136,6 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
   } = useProfileDraft();
   const { createProfileFromDraft, profiles } = useSavedProfiles();
   const [saveMessage, setSaveMessage] = useState('');
-
-  useEffect(() => {
-    if (!isManualMode && !hasVoiceAccess) {
-      router.replace({ pathname: '/upgrade', params: { feature: 'Voice Notes', returnTo: '/record-notes' } });
-    }
-  }, [hasVoiceAccess, isManualMode, router]);
 
   useEffect(() => {
     let isMounted = true;
@@ -289,10 +280,6 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
     };
   }, [openSectionId]);
 
-  if (!isManualMode && !hasVoiceAccess) {
-    return null;
-  }
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -312,7 +299,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
             <View style={styles.heroOverlay} />
             <Text style={styles.heroTitle}>Nivium</Text>
             <View style={styles.heroSubtitleStack}>
-              <Text style={styles.heroSubtitle}>Manual Data Entry</Text>
+              <Text style={styles.heroSubtitle}>Manually Enter Data</Text>
               <Image source={require('../assets/images/nivium-hero-swish.png')} style={styles.heroSubtitleSwish} resizeMode="stretch" />
             </View>
           </ImageBackground>
@@ -330,21 +317,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
         {isManualMode ? null : (
           <View style={styles.stickyShell}>
             <View style={styles.stickyPanel}>
-              <View style={styles.stickyHeaderRow}>
-                <Text style={styles.stickyLabel}>Voice Notes</Text>
-                <Pressable
-                  onPress={() => {
-                    if (!draft.rawNotes.trim()) {
-                      return;
-                    }
-                    setSaveMessage('');
-                    setRawNotesFromVoiceInput('');
-                  }}
-                  style={[styles.clearVoiceNotesButton, !draft.rawNotes.trim() ? styles.buttonDisabled : null]}
-                  disabled={!draft.rawNotes.trim()}>
-                  <Text style={styles.clearVoiceNotesButtonText}>Clear Voice Notes</Text>
-                </Pressable>
-              </View>
+              <Text style={styles.stickyLabel}>Voice Notes</Text>
               <TextInput
                 multiline
                 placeholder="Type, paste, or speak your voice notes..."
@@ -353,7 +326,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                 value={draft.rawNotes}
                 onChangeText={(value) => {
                   setSaveMessage('');
-                  setRawNotesFromVoiceInput(value);
+                  setRawNotes(value);
                 }}
                 textAlignVertical="top"
               />
@@ -445,7 +418,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                   ? 'Rendering can take around 10 seconds. Please wait while Nivium builds the plotted profile.'
                   : extractedEntries.length > 0
                   ? `${extractedEntries.length} fields recognized from the voice notes`
-                  : 'Record audio and speak in order: metadata, layers, temperatures, tests, then notes.'}
+                  : 'Paste or type voice notes, then fill the field card below.'}
               </Text>
               {saveMessage ? <Text style={styles.savedMessage}>{saveMessage}</Text> : null}
             </View>
@@ -487,27 +460,6 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                 </View>
               </Pressable>
             </View>
-            <Pressable
-              onPress={() => {
-                Alert.alert('Clear Data Fields', 'Clear all current Manual Data Entry fields and start a fresh profile?', [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Clear',
-                    style: 'destructive',
-                    onPress: () => {
-                      setSaveMessage('');
-                      void resetDraft();
-                    },
-                  },
-                ]);
-              }}
-              style={({ pressed }) => [styles.manualDangerShell, pressed ? styles.pressed : null]}>
-              <View style={styles.manualDangerFrame}>
-                <View style={styles.manualDangerAction}>
-                  <Text numberOfLines={1} style={styles.manualDangerText}>Clear Data Fields</Text>
-                </View>
-              </View>
-            </Pressable>
             {saveMessage ? <Text style={styles.savedMessage}>{saveMessage}</Text> : null}
           </>
         ) : (
@@ -594,88 +546,87 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                     }}
                   />
                 ) : (
-                  <>
-                    {section.fields.map((field) => (
-                      <View key={field.id} style={styles.field}>
-                        {field.id === 'date' ? null : <Text style={styles.fieldLabel}>{field.label}</Text>}
-                        {field.id === 'date' ? (
-                          <DateField
-                            value={draft.values[field.id] ?? ''}
-                            onChange={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                          />
-                        ) : field.id === 'time' ? (
-                          <SelectorField
-                            value={draft.values[field.id] ?? ''}
-                            placeholder="Choose time"
-                            options={timeOptions}
-                            onSelect={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                          />
-                        ) : field.id === 'wind' ? (
-                          <WindField
-                            value={draft.values[field.id] ?? ''}
-                            onChange={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                          />
-                        ) : field.options ? (
-                          <View style={styles.optionList}>
-                            {field.options.map((option) => {
-                              const selected = (draft.values[field.id] ?? '') === option;
-                              return (
-                                <Pressable
-                                  key={option}
-                                  onPress={() => {
-                                    setSaveMessage('');
-                                    setFieldValue(field.id, option);
-                                  }}
-                                  style={[styles.optionChip, selected ? styles.optionChipSelected : null]}>
-                                  <Text style={[styles.optionChipText, selected ? styles.optionChipTextSelected : null]}>
-                                    {option}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </View>
-                        ) : (
-                          <TextInput
-                            value={draft.values[field.id] ?? ''}
-                            onChangeText={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                            onFocus={() => {
-                              if (!isManualMode || field.id !== 'comments') {
-                                return;
-                              }
-                              const targetY = Math.max(sectionsOffsetRef.current + (sectionOffsetsRef.current.notes ?? 0) - 40, 0);
-                              setTimeout(() => {
-                                scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-                              }, 120);
-                              setTimeout(() => {
-                                scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-                              }, 260);
-                              setTimeout(() => {
-                                scrollViewRef.current?.scrollTo({ y: targetY + 80, animated: true });
-                              }, 420);
-                            }}
-                            placeholder={field.placeholder}
-                            placeholderTextColor="#8C8A84"
-                            multiline={field.multiline}
-                            keyboardType={field.keyboardType}
-                            style={[styles.fieldInput, field.multiline ? styles.multilineInput : null]}
-                            textAlignVertical={field.multiline ? 'top' : 'center'}
-                          />
-                        )}
-                      </View>
-                    ))}
-                  </>
+                  section.fields.map((field) => (
+                    <View key={field.id} style={styles.field}>
+                      <Text style={styles.fieldLabel}>{field.label}</Text>
+                      {field.id === 'date' ? (
+                        <DateField
+                          value={draft.values[field.id] ?? ''}
+                          onChange={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                        />
+                      ) : field.id === 'time' ? (
+                        <SelectorField
+                          label="Time"
+                          value={draft.values[field.id] ?? ''}
+                          placeholder="Choose time"
+                          options={timeOptions}
+                          onSelect={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                        />
+                      ) : field.id === 'wind' ? (
+                        <WindField
+                          value={draft.values[field.id] ?? ''}
+                          onChange={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                        />
+                      ) : field.options ? (
+                        <View style={styles.optionList}>
+                          {field.options.map((option) => {
+                            const selected = (draft.values[field.id] ?? '') === option;
+                            return (
+                              <Pressable
+                                key={option}
+                                onPress={() => {
+                                  setSaveMessage('');
+                                  setFieldValue(field.id, option);
+                                }}
+                                style={[styles.optionChip, selected ? styles.optionChipSelected : null]}>
+                                <Text style={[styles.optionChipText, selected ? styles.optionChipTextSelected : null]}>
+                                  {option}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      ) : (
+                        <TextInput
+                          value={draft.values[field.id] ?? ''}
+                          onChangeText={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                          onFocus={() => {
+                            if (!isManualMode || field.id !== 'comments') {
+                              return;
+                            }
+                            const targetY = Math.max(sectionsOffsetRef.current + (sectionOffsetsRef.current.notes ?? 0) - 40, 0);
+                            setTimeout(() => {
+                              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                            }, 120);
+                            setTimeout(() => {
+                              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                            }, 260);
+                            setTimeout(() => {
+                              scrollViewRef.current?.scrollTo({ y: targetY + 80, animated: true });
+                            }, 420);
+                          }}
+                          placeholder={field.placeholder}
+                          placeholderTextColor="#8C8A84"
+                          multiline={field.multiline}
+                          keyboardType={field.keyboardType}
+                          style={[styles.fieldInput, field.multiline ? styles.multilineInput : null]}
+                          textAlignVertical={field.multiline ? 'top' : 'center'}
+                        />
+                      )}
+                    </View>
+                  ))
                 )}
               </AccordionSection>
             </View>
@@ -884,42 +835,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },
-  manualDangerShell: {
-    marginTop: 8,
-    borderRadius: 8,
-    padding: 3,
-    backgroundColor: '#06080B',
-    alignSelf: 'flex-end',
-  },
-  manualDangerFrame: {
-    borderRadius: 5,
-    padding: 2,
-    backgroundColor: '#612A2A',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(255,255,255,0.16)',
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(255,255,255,0.1)',
-    borderRightWidth: 2,
-    borderRightColor: 'rgba(60,10,10,0.34)',
-    borderBottomWidth: 3,
-    borderBottomColor: 'rgba(60,10,10,0.5)',
-  },
-  manualDangerAction: {
-    borderRadius: 3,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#C23A3A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  manualDangerText: {
-    color: '#FFF5F5',
-    fontSize: 13,
-    fontWeight: '800',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
   hero: {
     overflow: 'hidden',
     borderRadius: 8,
@@ -995,33 +910,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1,
-  },
-  stickyHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  clearVoiceNotesButton: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: '#A9B8C4',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(255,255,255,0.28)',
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(255,255,255,0.22)',
-    borderRightWidth: 2,
-    borderRightColor: 'rgba(7,20,36,0.2)',
-    borderBottomWidth: 3,
-    borderBottomColor: 'rgba(7,20,36,0.34)',
-  },
-  clearVoiceNotesButtonText: {
-    color: '#173248',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
   },
   input: {
     minHeight: 120,
@@ -1145,29 +1033,6 @@ const styles = StyleSheet.create({
     color: '#0F2233',
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '700',
-  },
-  sectionCoachCard: {
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#A9BBC8',
-    borderWidth: 1,
-    borderColor: '#31495C',
-    gap: 4,
-    marginBottom: 8,
-  },
-  sectionCoachTitle: {
-    color: '#173248',
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 2,
-  },
-  sectionCoachLine: {
-    color: '#30516A',
-    fontSize: 13,
-    lineHeight: 18,
     fontWeight: '700',
   },
   sections: {
@@ -1342,27 +1207,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     flexWrap: 'wrap',
-  },
-  insertLayerPanel: {
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#A9BBC8',
-    borderWidth: 1,
-    borderColor: '#31495C',
-    gap: 10,
-  },
-  insertLayerTitle: {
-    color: '#173248',
-    fontSize: 14,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  insertLayerCopy: {
-    color: '#30516A',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
   },
   temperatureBuilder: {
     gap: 14,
@@ -1937,9 +1781,6 @@ function LayerBuilder({
   const canAddLayer = activeCount < layerIndexes.length;
   const canRemoveLayer = activeCount > 1;
   const [openLayerIndex, setOpenLayerIndex] = useState(activeCount);
-  const [showInsertLayerControls, setShowInsertLayerControls] = useState(false);
-  const [insertTopDepth, setInsertTopDepth] = useState('');
-  const [insertBottomDepth, setInsertBottomDepth] = useState('');
 
   useEffect(() => {
     if (openLayerIndex > activeCount) {
@@ -2189,13 +2030,6 @@ function LayerBuilder({
         </Pressable>
         <Pressable
           onPress={() => {
-            setShowInsertLayerControls((current) => !current);
-          }}
-          style={styles.removeLayerButton}>
-          <Text style={styles.removeLayerButtonText}>Insert Missing Layer</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => {
             if (!canRemoveLayer) {
               return;
             }
@@ -2209,77 +2043,6 @@ function LayerBuilder({
           <Text style={styles.removeLayerButtonText}>Remove Last Layer</Text>
         </Pressable>
       </View>
-      {showInsertLayerControls ? (
-        <View style={styles.insertLayerPanel}>
-          <Text style={styles.insertLayerTitle}>Insert Missing Layer</Text>
-          <Text style={styles.insertLayerCopy}>Enter top and bottom depth (cm). The app will split that existing range.</Text>
-          <View style={styles.layerRow}>
-            <View style={styles.layerCol}>
-              <Text style={styles.subFieldLabel}>Top Depth (cm)</Text>
-              <TextInput
-                value={insertTopDepth}
-                onChangeText={(value) => setInsertTopDepth(normalizeBottomDepthDraftValue(value))}
-                placeholder="e.g. 47"
-                placeholderTextColor="#8C8A84"
-                keyboardType="numeric"
-                style={styles.fieldInput}
-              />
-            </View>
-            <View style={styles.layerCol}>
-              <Text style={styles.subFieldLabel}>Bottom Depth (cm)</Text>
-              <TextInput
-                value={insertBottomDepth}
-                onChangeText={(value) => setInsertBottomDepth(normalizeBottomDepthDraftValue(value))}
-                placeholder="e.g. 90"
-                placeholderTextColor="#8C8A84"
-                keyboardType="numeric"
-                style={styles.fieldInput}
-              />
-            </View>
-          </View>
-          <View style={styles.layerActionRow}>
-            <Pressable
-              onPress={() => {
-                const top = parseDepthValue(insertTopDepth);
-                const bottom = parseDepthValue(insertBottomDepth);
-                if (top === null || bottom === null) {
-                  Alert.alert('Insert Layer', 'Enter valid top and bottom depth values.');
-                  return;
-                }
-
-                const result = insertMissingLayerIntoDepthRange({
-                  values,
-                  onChange,
-                  activeCount,
-                  top,
-                  bottom,
-                });
-                if (!result.ok) {
-                  Alert.alert('Insert Layer', result.message);
-                  return;
-                }
-
-                setOpenLayerIndex(result.insertIndex);
-                onFocusLayer(result.insertIndex);
-                setShowInsertLayerControls(false);
-                setInsertTopDepth('');
-                setInsertBottomDepth('');
-              }}
-              style={styles.addLayerButton}>
-              <Text style={styles.addLayerButtonText}>Insert Layer</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setShowInsertLayerControls(false);
-                setInsertTopDepth('');
-                setInsertBottomDepth('');
-              }}
-              style={styles.removeLayerButton}>
-              <Text style={styles.removeLayerButtonText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -2292,7 +2055,7 @@ function SelectorField({
   clearOptionLabel,
   onSelect,
 }: {
-  label?: string;
+  label: string;
   value: string;
   placeholder: string;
   options: readonly (string | { label: string; value: string })[];
@@ -2306,7 +2069,7 @@ function SelectorField({
 
   return (
     <View style={styles.selectorField}>
-      {label ? <Text style={styles.subFieldLabel}>{label}</Text> : null}
+      <Text style={styles.subFieldLabel}>{label}</Text>
       <Pressable
         onPress={() => setIsOpen((current) => !current)}
         style={[styles.selectorTrigger, isOpen ? styles.selectorTriggerSelected : null]}>
@@ -2405,6 +2168,9 @@ function TemperatureBuilder({
               </View>
             </View>
 
+            <Text style={styles.temperatureHint}>
+              Pick the measurement depth, then type the temperature beside it.
+            </Text>
           </View>
         );
       })}
@@ -2780,151 +2546,6 @@ function clearLayerCard(index: number, onChange: (fieldId: string, value: string
     `layer_${index}_comment`,
     `layer_${index}_concern`,
   ].forEach((fieldId) => onChange(fieldId, ''));
-}
-
-function formatDepthValue(value: number) {
-  if (Number.isInteger(value)) {
-    return `${value}`;
-  }
-  return `${value}`.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
-}
-
-function parseDepthValue(value: string) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-  return numeric;
-}
-
-function insertMissingLayerIntoDepthRange({
-  values,
-  onChange,
-  activeCount,
-  top,
-  bottom,
-}: {
-  values: Record<string, string>;
-  onChange: (fieldId: string, value: string) => void;
-  activeCount: number;
-  top: number;
-  bottom: number;
-}) {
-  if (!(top < bottom)) {
-    return { ok: false as const, message: 'Top depth must be shallower than bottom depth.' };
-  }
-
-  type LayerRow = {
-    top: number;
-    bottom: number;
-    hardness1: string;
-    hardness2: string;
-    grain1: string;
-    grain2: string;
-    size1: string;
-    size2: string;
-    comment: string;
-    concern: string;
-  };
-
-  const existing: LayerRow[] = [];
-  let previousBottom = parseDepthValue(values.layer_1_top ?? '') ?? 0;
-
-  for (let index = 1; index <= activeCount; index += 1) {
-    const bottomDepth = parseDepthValue(values[`layer_${index}_bottom`] ?? '');
-    if (bottomDepth === null || bottomDepth <= previousBottom) {
-      return { ok: false as const, message: `Layer ${index} does not have a valid bottom depth.` };
-    }
-
-    existing.push({
-      top: previousBottom,
-      bottom: bottomDepth,
-      hardness1: values[`layer_${index}_hardness_1`] ?? '',
-      hardness2: values[`layer_${index}_hardness_2`] ?? '',
-      grain1: values[`layer_${index}_grain_1`] ?? '',
-      grain2: values[`layer_${index}_grain_2`] ?? '',
-      size1: values[`layer_${index}_size_1`] ?? '',
-      size2: values[`layer_${index}_size_2`] ?? '',
-      comment: values[`layer_${index}_comment`] ?? '',
-      concern: values[`layer_${index}_concern`] ?? '',
-    });
-    previousBottom = bottomDepth;
-  }
-
-  const containingIndex = existing.findIndex((layer) => top >= layer.top && bottom <= layer.bottom);
-  if (containingIndex === -1) {
-    return { ok: false as const, message: 'Insert range must be inside one existing layer range.' };
-  }
-
-  const containing = existing[containingIndex];
-  if (top === containing.top && bottom === containing.bottom) {
-    return { ok: false as const, message: 'Insert range matches an existing layer. Edit that layer directly.' };
-  }
-
-  const rebuilt: LayerRow[] = [];
-  for (let index = 0; index < existing.length; index += 1) {
-    if (index !== containingIndex) {
-      rebuilt.push(existing[index]);
-      continue;
-    }
-
-    if (top > containing.top) {
-      rebuilt.push({
-        ...containing,
-        bottom: top,
-      });
-    }
-
-    rebuilt.push({
-      top,
-      bottom,
-      hardness1: '',
-      hardness2: '',
-      grain1: '',
-      grain2: '',
-      size1: '',
-      size2: '',
-      comment: '',
-      concern: 'no',
-    });
-
-    if (bottom < containing.bottom) {
-      rebuilt.push({
-        ...containing,
-        top: bottom,
-        bottom: containing.bottom,
-      });
-    }
-  }
-
-  if (rebuilt.length > layerIndexes.length) {
-    return { ok: false as const, message: 'Not enough layer slots for this split. Remove one layer first.' };
-  }
-
-  for (let index = 1; index <= layerIndexes.length; index += 1) {
-    clearLayerCard(index, onChange);
-  }
-
-  rebuilt.forEach((layer, index) => {
-    const slot = index + 1;
-    if (slot === 1) {
-      onChange('layer_1_top', formatDepthValue(layer.top));
-    }
-    onChange(`layer_${slot}_bottom`, formatDepthValue(layer.bottom));
-    onChange(`layer_${slot}_hardness_1`, layer.hardness1);
-    onChange(`layer_${slot}_hardness_2`, layer.hardness2);
-    onChange(`layer_${slot}_grain_1`, layer.grain1);
-    onChange(`layer_${slot}_grain_2`, layer.grain2);
-    onChange(`layer_${slot}_size_1`, layer.size1);
-    onChange(`layer_${slot}_size_2`, layer.size2);
-    onChange(`layer_${slot}_comment`, layer.comment);
-    onChange(`layer_${slot}_concern`, layer.concern || 'no');
-  });
-
-  const insertIndex = rebuilt.findIndex((layer) => layer.top === top && layer.bottom === bottom) + 1;
-  onChange('layer_count', `${Math.max(rebuilt.length, 1)}`);
-
-  return { ok: true as const, insertIndex: Math.max(insertIndex, 1) };
 }
 
 function clearTemperatureRow(index: number, onChange: (fieldId: string, value: string) => void) {

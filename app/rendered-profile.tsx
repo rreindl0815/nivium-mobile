@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Image, ImageBackground, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Image, ImageBackground, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -10,10 +10,10 @@ import { parseFormattedProfile } from '@/utils/profile-document';
 
 export default function RenderedProfileScreen() {
   const router = useRouter();
-  const { isPaid } = useAppAccess();
+  const { isPaid, setTier } = useAppAccess();
   const params = useLocalSearchParams<{ profileId?: string; viewer?: string }>();
   const { profiles, selectedProfile } = useSavedProfiles();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerImageDataUri, setViewerImageDataUri] = useState<string | null>(null);
   const routeProfileId = Array.isArray(params.profileId) ? params.profileId[0] : params.profileId;
@@ -23,20 +23,24 @@ export default function RenderedProfileScreen() {
   const shouldOpenViewer = routeViewer === '1';
   const basePreviewWidth = Math.max(300, screenWidth - 64);
   const basePreviewHeight = 220;
+  const modalMaxWidth = screenWidth - 18;
+  const modalMaxHeight = screenHeight - 120;
+  const modalPreviewWidth = Math.min(modalMaxWidth, modalMaxHeight / 1.4286);
+  const modalPreviewHeight = modalPreviewWidth * 1.4286;
   const parsedProfile = activeProfile?.formattedText ? parseFormattedProfile(activeProfile.formattedText) : null;
   const previewFileName = activeProfile?.previewImageUri?.split('/').pop() ?? 'missing';
   const createdStamp = activeProfile?.createdAt
     ? new Date(activeProfile.createdAt).toLocaleString()
     : 'missing';
   const rawStabilitySnippet = (() => {
-    if (parsedProfile?.layers.length) {
-      return parsedProfile.layers.join(' ');
-    }
     const raw = activeProfile?.rawNotes ?? '';
     if (!raw.trim()) {
       return 'missing';
     }
-    return raw.replace(/\s+/g, ' ').trim();
+    const match = raw.match(/(stability test[\s\S]*?)(?:\d{1,3}[°º]?\s*\d{1,2}'\d{1,2}"?|$)/i);
+    return (match?.[1] ?? raw.slice(Math.max(0, raw.toLowerCase().indexOf('stability')), raw.length))
+      .replace(/\s+/g, ' ')
+      .trim() || 'missing';
   })();
 
   const handlePaidAction = (label: string, route: '/archive' | '/print' | '/share') => {
@@ -291,8 +295,8 @@ export default function RenderedProfileScreen() {
                 <Text style={styles.debugLine}>Raw stability: {rawStabilitySnippet}</Text>
                 <Text style={styles.debugLine}>Tests: {parsedProfile?.stabilityTests.length ?? 0}</Text>
                 {parsedProfile?.stabilityTests.length ? (
-                  parsedProfile.stabilityTests.map((line, index) => (
-                    <Text key={`debug-stability-${index}`} style={styles.debugLine}>
+                  parsedProfile.stabilityTests.map((line) => (
+                    <Text key={line} style={styles.debugLine}>
                       {line}
                     </Text>
                   ))

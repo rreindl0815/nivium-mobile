@@ -111,17 +111,7 @@ function needsPlotAttention(profile: {
 export default function ArchiveScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
-  const hasArchiveAccess = __DEV__ || isPaid;
-  const {
-    profiles,
-    selectedProfileId,
-    setSelectedProfileId,
-    deleteProfile,
-    reopenProfileForEditing,
-    ensureProfilePdf,
-    clearArchivePreservingSamples,
-    isLoaded,
-  } = useSavedProfiles();
+  const { profiles, selectedProfileId, setSelectedProfileId, deleteProfile, reopenProfileForEditing, ensureProfilePdf, isLoaded } = useSavedProfiles();
   const [searchQuery, setSearchQuery] = useState('');
   const [openProfileId, setOpenProfileId] = useState<string | null>(null);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -223,12 +213,12 @@ export default function ArchiveScreen() {
   }, [openProfileId, scrollToProfileCard, viewportHeight]);
 
   useEffect(() => {
-    if (!hasArchiveAccess) {
+    if (!isPaid) {
       router.replace({ pathname: '/upgrade', params: { feature: 'Archive', returnTo: '/archive' } });
     }
-  }, [hasArchiveAccess, router]);
+  }, [isPaid, router]);
 
-  if (!hasArchiveAccess) {
+  if (!isPaid) {
     return null;
   }
 
@@ -329,28 +319,7 @@ export default function ArchiveScreen() {
           <View style={styles.cardHighlight} />
           <View style={styles.archivePanel}>
           <View style={styles.cardAccent} />
-          <View style={styles.archiveHeaderRow}>
-            <Text style={styles.sectionLabel}>Saved Profiles</Text>
-            <Pressable
-              onPress={() => {
-                Alert.alert('Clear Archive', 'Delete all archived profiles on this device?', [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Clear Archive',
-                    style: 'destructive',
-                    onPress: () => {
-                      void (async () => {
-                        const removedCount = await clearArchivePreservingSamples();
-                        Alert.alert('Archive Cleared', `${removedCount} archived profile${removedCount === 1 ? '' : 's'} removed.`);
-                      })();
-                    },
-                  },
-                ]);
-              }}
-              style={styles.clearArchiveButton}>
-              <Text style={styles.clearArchiveButtonText}>Clear Archive</Text>
-            </Pressable>
-          </View>
+          <Text style={styles.sectionLabel}>Saved Profiles</Text>
           <View style={styles.searchBlock}>
             <TextInput
               value={searchQuery}
@@ -477,9 +446,11 @@ export default function ArchiveScreen() {
                         onPress={() => {
                           void (async () => {
                             setSelectedProfileId(profile.id);
-                            const reopened = await reopenProfileForEditing(profile.id);
-                            if (reopened) {
+                            const nextKind = await reopenProfileForEditing(profile.id);
+                            if (nextKind === 'manual') {
                               router.push('/manual-entry');
+                            } else if (nextKind === 'raw-notes') {
+                              router.push('/record-notes');
                             }
                           })();
                         }}
@@ -814,33 +785,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#173248',
     gap: 12,
-  },
-  archiveHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  clearArchiveButton: {
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#C23A3A',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(255,255,255,0.14)',
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(255,255,255,0.08)',
-    borderRightWidth: 2,
-    borderRightColor: 'rgba(77,10,10,0.42)',
-    borderBottomWidth: 3,
-    borderBottomColor: 'rgba(77,10,10,0.58)',
-  },
-  clearArchiveButtonText: {
-    color: '#FFF5F5',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
   },
   searchBlock: {
     gap: 10,

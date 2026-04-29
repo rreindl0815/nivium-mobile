@@ -278,11 +278,6 @@ def parse_temps(text: str) -> List[Tuple[float,float]]:
         line = raw.strip().lower()
         if not line:
             continue
-        # Never treat layer lines as temperature points. A layer such as
-        # "154-156 ... | surface wear" can otherwise be misread as a
-        # depth/temp pair and create a stray red dot at the chart edge.
-        if re.match(r'^\s*\d+(?:\.\d+)?\s*(?:-|to)\s*\d+(?:\.\d+)?\b', line):
-            continue
         if ("surface" not in line) and ("cm" not in line) and ("minus" not in line) and (not line.startswith("-")):
             continue
 
@@ -637,11 +632,7 @@ def parse_dictation(text:str)->ProfileData:
             return None
         top=float(m.group(1)); bottom=float(m.group(2))
 
-        is_red = (
-            bool(re.search(r"\bred\b", s_norm))
-            or ("layer of concern" in s_norm)
-            or ("highlight" in s_norm)
-        )
+        is_red=(" red" in s_norm) or ("layer of concern" in s_norm) or ("highlight" in s_norm)
 
         # crust detection: ANY "crust" triggers crust fill
         is_crust=False; grain=""
@@ -733,30 +724,6 @@ def parse_dictation(text:str)->ProfileData:
             msz=re.search(r'\b([0-9]+(?:\.[0-9]+)?)\b\s*(millimeter|millimeters|centimeter|centimeters|centimetre|centimetres)\b', s_norm, flags=re.I)
             if msz and size is None:
                 size=float(msz.group(1))
-
-        # Fallback: preserve dual sizes whenever slash-size appears, even if
-        # earlier compact patterns miss due punctuation/order quirks.
-        if size2 is None:
-            msize_dual = re.search(
-                r'(?P<s1>[0-9]+(?:\.[0-9]+)?)\s*(?:mm|cm)\s*/\s*(?P<s2>[0-9]+(?:\.[0-9]+)?)\s*(?:mm|cm)\b',
-                raw_dash,
-                flags=re.I,
-            )
-            if msize_dual:
-                if size is None:
-                    size = float(msize_dual.group('s1'))
-                size2 = float(msize_dual.group('s2'))
-
-        # Fallback: preserve dual grains whenever slash-grain appears.
-        if grain2 is None and not is_crust:
-            mgrain_dual = re.search(
-                r'\b(?P<g1>[A-Za-z]{1,8}(?:xr|cr|rc)?)\s*/\s*(?P<g2>[A-Za-z]{1,8}(?:xr|cr|rc)?)\b',
-                raw_dash,
-                flags=re.I,
-            )
-            if mgrain_dual:
-                grain = _map_grain(mgrain_dual.group('g1').strip())
-                grain2 = _map_grain(mgrain_dual.group('g2').strip())
 
         hardness=parse_layer_hardness(raw_dash)
         return Layer(
@@ -1397,14 +1364,13 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
             pending_layer_comments.append((ly.comment, y_top, y_bot))
 
     # Thin layers: decide callout placement for layer info + any stability test callout
-    thin_callout_groups = []  # list of grouped requests per thin layer
+    thin_callout_requests = []  # (txt, anchor_y_px, side, max_height_px, priority)
     for ly in thin_layers:
-        layer_txt_parts=[f"{int(ly.top)}-{int(ly.bottom)}"]
+        layer_txt_parts=[f"{int(ly.top)}–{int(ly.bottom)} cm"]
         if ly.grain and getattr(ly, "grain2", None):
             dual_grain = f"{ly.grain}/{ly.grain2}"
             if ly.size_mm is not None and ly.size2_mm is not None:
-                # Compact dual notation for thin-layer callouts to avoid truncation.
-                layer_txt_parts = [f"{int(ly.top)}-{int(ly.bottom)}", f"{dual_grain}", f"{ly.size_mm:g}/{ly.size2_mm:g}mm"]
+                layer_txt_parts.append(f"{dual_grain} {ly.size_mm:g}mm/{ly.size2_mm:g}mm")
             elif ly.size_mm is not None:
                 layer_txt_parts.append(f"{dual_grain} {ly.size_mm:g}mm")
             else:
@@ -1419,23 +1385,35 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
             layer_txt = " ".join(layer_txt_parts)
         stabs_here = stabs_by_thin.get(id(ly), [])
 
-        # Candidate entries: keep the layer/comment block and any stability-test
-        # callouts separate. Renderer priority follows the agreed rule set:
-        # 1. layer comments / labels
-        # 2. stability tests
-        layer_requests = [("layer", layer_txt, float(ly.bottom), 0)]
-        for st in stabs_here:
-            layer_requests.append(("stab", f"{st.code} @ {int(st.depth_cm)} cm", float(st.depth_cm), 1))
+        # choose which side has more space
+        space_above, space_below = neighbor_space(ly.top, ly.bottom)
 
-        grouped_requests = []
-        for kind, txt, anchor_depth, priority in layer_requests:
+        # Candidate entries: keep the layer/comment block and any stability-test
+        # callouts separate so a short test label can fall into the next clean
+        # comment band instead of crowding a longer layer comment.
+        candidates=[]
+        for st in stabs_here:
+            candidates.append(("stab", f"{st.code} @ {int(st.depth_cm)} cm", float(st.depth_cm)))
+        candidates.append(("layer", layer_txt, float(ly.bottom)))
+
+        # primary side = larger space
+        primary_side = "above" if space_above >= space_below else "below"
+        if ly.top <= 0.001:
+            primary_side = "below"
+        secondary_side = "below" if primary_side=="above" else "above"
+
+        used_primary=False
+        for kind, txt, anchor_depth in candidates:
             # Anchor leader target at the CENTER of the thin layer for layer callouts.
             if kind == "layer":
                 anchor_y = y_at((ly.top + ly.bottom) / 2.0)
             else:
                 anchor_y = y_at(anchor_depth)
-            grouped_requests.append((txt, anchor_y, None, 0.0, priority))
-        thin_callout_groups.append((float(ly.top), grouped_requests))
+            if not used_primary:
+                thin_callout_requests.append((txt, anchor_y, primary_side, space_below if primary_side=="below" else space_above, 0 if kind=="stab" else 1))
+                used_primary=True
+            else:
+                thin_callout_requests.append((txt, anchor_y, secondary_side, space_below if secondary_side=="below" else space_above, 0 if kind=="stab" else 1))
 
     def _find_layer_for_depth(depth_cm: float):
         tol = 1e-6
@@ -1576,7 +1554,7 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
             return center >= anchor_y_px - 1.0
         return True
 
-    def _render_thin_callout_group(requests, min_center=None):
+    def _render_thin_callout_group(requests):
         last_assigned_center = None
         for txt, anchor_y_px, preferred_side, _max_height_px, _priority in requests:
             viable = []
@@ -1585,10 +1563,9 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
                 for seg_st, seg_sb in _free_segments_for_band(band):
                     block_h = _callout_metrics_for_height(txt, seg_sb - seg_st)
                     if block_h <= (seg_sb - seg_st):
-                        placed_top = min(max(anchor_y_px - (block_h / 2.0), seg_st), max(seg_st, seg_sb - block_h))
-                        placed_center = placed_top + (block_h / 2.0)
+                        center = (seg_st + seg_sb) / 2.0
                         edge_distance = min(abs(seg_st - anchor_y_px), abs(seg_sb - anchor_y_px))
-                        candidate = (abs(placed_center - anchor_y_px), edge_distance, placed_center, band, seg_st, seg_sb, block_h)
+                        candidate = (abs(center - anchor_y_px), edge_distance, band, seg_st, seg_sb, block_h)
                         fallback_viable.append(candidate)
                         if _segment_matches_side(seg_st, seg_sb, anchor_y_px, preferred_side):
                             viable.append(candidate)
@@ -1597,41 +1574,26 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
             if viable:
                 ordered_viable = sorted(viable, key=lambda t: t[0])
                 chosen = None
-                floor_center = None
-                if min_center is not None and anchor_y_px >= (min_center - 4.0):
-                    floor_center = min_center
-                effective_last_center = floor_center if floor_center is not None and last_assigned_center is None else last_assigned_center
-                if effective_last_center is not None:
+                if last_assigned_center is not None:
                     for candidate in ordered_viable:
-                        center = candidate[2]
-                        if floor_center is not None and center < floor_center - 1.0:
-                            continue
-                        if center >= effective_last_center - 1.0:
-                            chosen = candidate
-                            break
-                if chosen is None and floor_center is not None:
-                    for candidate in ordered_viable:
-                        center = candidate[2]
-                        if center >= floor_center - 1.0:
+                        center = (candidate[3] + candidate[4]) / 2.0
+                        if center >= last_assigned_center - 1.0:
                             chosen = candidate
                             break
                 if chosen is None:
                     chosen = ordered_viable[0]
-                _, _, placed_center, band, seg_st, seg_sb, _block_h = chosen
-                seed_y = min(max(anchor_y_px - (_block_h / 2.0), seg_st), max(seg_st, seg_sb - _block_h))
+                _, _, band, seg_st, seg_sb, _block_h = chosen
+                seed_y = seg_st
                 draw_callout(txt, anchor_y_px, "below", seg_sb - seg_st, y_top_override=(seg_st, seg_sb, seed_y))
-                last_assigned_center = placed_center
+                last_assigned_center = (seg_st + seg_sb) / 2.0
             else:
                 draw_callout(txt, anchor_y_px, "below", max(12.0, _line_pad * 2.0))
-        return last_assigned_center
 
-    for comment_text, y_top, y_bot in pending_layer_comments:
-        _draw_layer_comment(comment_text, y_top, y_bot)
-
-    last_thin_center = None
-    for _top, requests in sorted(thin_callout_groups, key=lambda item: item[0]):
-        ordered_requests = sorted(requests, key=lambda r: (r[4], r[1]))
-        last_thin_center = _render_thin_callout_group(ordered_requests, min_center=last_thin_center)
+    ordered_requests = sorted(thin_callout_requests, key=lambda r: (r[1], r[4]))
+    stab_requests = [request for request in ordered_requests if request[4] == 0]
+    layer_requests = [request for request in ordered_requests if request[4] != 0]
+    _render_thin_callout_group(stab_requests)
+    _render_thin_callout_group(layer_requests)
 
 
     # Stability tests that are NOT within a thin layer: render as standalone callouts
@@ -1654,28 +1616,28 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
                 for seg_st, seg_sb in _free_segments_for_band(band):
                     block_h = _callout_metrics_for_height(txt, seg_sb - seg_st)
                     if block_h <= (seg_sb - seg_st):
-                        placed_top = min(max(anchor_y - (block_h / 2.0), seg_st), max(seg_st, seg_sb - block_h))
-                        placed_center = placed_top + (block_h / 2.0)
+                        center = (seg_st + seg_sb) / 2.0
                         edge_distance = min(abs(seg_st - anchor_y), abs(seg_sb - anchor_y))
-                        viable.append((abs(placed_center - anchor_y), edge_distance, placed_center, seg_st, seg_sb))
+                        viable.append((abs(center - anchor_y), edge_distance, seg_st, seg_sb))
             if viable:
                 ordered_viable = sorted(viable, key=lambda t: t[0])
                 chosen = None
                 if last_standalone_center is not None:
                     for candidate in ordered_viable:
-                        center = candidate[2]
+                        center = (candidate[2] + candidate[3]) / 2.0
                         if center >= last_standalone_center - 1.0:
                             chosen = candidate
                             break
                 if chosen is None:
                     chosen = ordered_viable[0]
-                _, _, placed_center, seg_st, seg_sb = chosen
-                block_h = _callout_metrics_for_height(txt, seg_sb - seg_st)
-                seed_y = min(max(anchor_y - (block_h / 2.0), seg_st), max(seg_st, seg_sb - block_h))
-                draw_callout(txt, anchor_y, "below", seg_sb - seg_st, y_top_override=(seg_st, seg_sb, seed_y))
-                last_standalone_center = placed_center
+                _, _, seg_st, seg_sb = chosen
+                draw_callout(txt, anchor_y, "below", seg_sb - seg_st, y_top_override=(seg_st, seg_sb, seg_st))
+                last_standalone_center = (seg_st + seg_sb) / 2.0
             else:
                 draw_callout(txt, anchor_y, "below", max(12.0, _line_pad * 2.0))
+
+    for comment_text, y_top, y_bot in pending_layer_comments:
+        _draw_layer_comment(comment_text, y_top, y_bot)
 
 # Temperature curve + dots
     if profile.temps:

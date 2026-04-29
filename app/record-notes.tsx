@@ -1,16 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Audio } from 'expo-av';
+import { memo, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { memo, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
 import { useProfileDraft } from '@/context/profile-draft-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
-import { isTranscribeServiceConfigured, transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
-import { formatVoiceNotesForEditing } from '@/utils/voice-notes-format';
 const metadataLines = [
-  'Speak in order:',
   'Date __________',
   'Time __________',
   'Run Name / Location __________',
@@ -19,6 +14,7 @@ const metadataLines = [
   'Elevation _____ m',
   'Aspect __________',
   'Slope Angle _____ degrees',
+  'Lat / Long __________',
   'Air Temperature _____ C',
   'Sky __________ (clr, few, sct, bkn, ovc)',
   'Precip _____ (nil, S-1, S1, S2, S3, R, mixed)',
@@ -28,340 +24,57 @@ const metadataLines = [
   'Surface Grain __________',
   'Foot Pen _____ cm',
   'Ski Pen _____ cm',
-  'Lat / Long __________',
 ];
 
 const layerLines = [
-  'Start from the top down:',
-  '',
-  'First layer from __0__cm to____cm',
-  'Hardness ______',
-  '(F, F+, 4F, 4F+, 1F, 1F+, P, P+, K, K+, I)',
-  '',
-  'Hardness 2___________________(optional)',
-  'Grain Form___________________(optional)',
-  'Grain Form 2__________________(optional)',
-  'Grain Size____________________(optional)',
-  'Grain Size 2___________________(optional)',
-  'Layer Comments______________(optional)',
-  'Make this layer red. (optional)',
-  '',
-  'Next layer down to________cm',
-  'Hardness ______',
-  '(F, F+, 4F, 4F+, 1F, 1F+, P, P+, K, K+, I)',
-  '',
-  'Repeat for every layer below.',
+  'Top of layer _____ cm',
+  'Bottom of layer _____ cm',
+  'Hardness 1 _____',
+  'Hardness 2 _____ (optional)',
+  'Grain Form 1 _____',
+  'Grain Form 2 _____ (optional)',
+  'Grain Size 1 _____',
+  'Grain Size 2 _____ (optional)',
+  'Comments ____________________',
+  'Layer of concern / red? Yes or no',
+  'Repeat for every layer.',
 ];
-const emphasizedLayerLines = new Set([
-  'First layer from __0__cm to____cm',
-  'Hardness ______',
-  '(F, F+, 4F, 4F+, 1F, 1F+, P, P+, K, K+, I)',
-  'Next layer down to________cm',
-  'Repeat for every layer below.',
-]);
 
 const temperatureLines = [
-  'Speak one line at a time, surface downward:',
-  'surface ______',
+  '0 cm ______',
   '10 cm ______',
   '20 cm ______',
   '30 cm ______',
   '40 cm ______',
   '50 cm ______',
-  'Continue downward in order.',
+  'Continue in the same pattern below.',
 ];
 
 const stabilityBlocks = [
-  ['Speak one full test line at a time', 'Example: ECTP14 at 41 cm', 'Example: PST 40/100 ARR at 46 cm'],
-  ['Compression Test', 'Result _____ (easy, moderate, hard)', 'Taps _____', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
+  ['Compression Test', 'Taps _____', 'Result _____ (easy, moderate, hard)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Shovel Shear Test', 'Result _____ (easy, moderate, hard)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Hand Shear Test', 'Result _____ (easy, moderate, hard)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
-  ['Ext. Col. Test', 'Result _____ (ECTN, ECTP, ECTX)', 'Taps _____', 'Depth _____ cm'],
+  ['Ext. Col. Test', 'Result _____ (ECTN, ECTP, ECTX)', 'Taps _____', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Propagation Saw Test', 'Cut Length _____', 'Column Length _____', 'Result _____ (End, Arr, SF)', 'Depth _____ cm'],
-  ['Rutschblock Test', 'Result _____ (RB1-RB7)', 'Depth _____ cm'],
+  ['Rutschblock Test', 'Result _____ (RB1-RB7)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
+  ['Extra Notes', '____________________'],
 ];
-const extraNotesLines = ['____________________'];
-
-const PENDING_AUDIO_QUEUE_KEY = 'nivium-pending-audio-transcription-v1';
-
-type PendingAudioJob = {
-  id: string;
-  uri: string;
-  createdAt: string;
-};
 
 export default function RecordNotesScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
-  const hasVoiceAccess = __DEV__ || isPaid;
-  const { draft, setRawNotesFromVoiceInput, finalizeVoiceNotesFormatting } = useProfileDraft();
+  const { draft, setRawNotes } = useProfileDraft();
   const { createProfileFromDraft } = useSavedProfiles();
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [queuedJobs, setQueuedJobs] = useState<PendingAudioJob[]>([]);
-  const [voiceStatusMessage, setVoiceStatusMessage] = useState<string | null>(null);
   const compact = true;
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const isFlushingQueueRef = useRef(false);
-  const flushQueuedAudioJobsRef = useRef<() => Promise<void>>(async () => undefined);
-
-  const loadQueuedJobs = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(PENDING_AUDIO_QUEUE_KEY);
-      if (!stored) {
-        setQueuedJobs([]);
-        return [];
-      }
-      const parsed = JSON.parse(stored) as PendingAudioJob[];
-      const safeParsed = Array.isArray(parsed) ? parsed : [];
-      setQueuedJobs(safeParsed);
-      return safeParsed;
-    } catch {
-      setQueuedJobs([]);
-      return [];
-    }
-  };
-
-  const saveQueuedJobs = async (next: PendingAudioJob[]) => {
-    setQueuedJobs(next);
-    await AsyncStorage.setItem(PENDING_AUDIO_QUEUE_KEY, JSON.stringify(next));
-  };
-
-  const queueAudioForLater = async (uri: string) => {
-    const nextJob: PendingAudioJob = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      uri,
-      createdAt: new Date().toISOString(),
-    };
-    const current = await loadQueuedJobs();
-    const next = [nextJob, ...current];
-    await saveQueuedJobs(next);
-    setVoiceStatusMessage('Queued for transcription. Waiting for reception or Wi-Fi.');
-  };
-
-  const transcribeAndApply = async (uri: string) => {
-    const response = await transcribeAudioFromServiceAsync({
-      audioUri: uri,
-      source: 'raw-notes-audio',
-      formatterVersion: 'nivium-ai-v1',
-    });
-    const serverFormattedText = response.formattedText?.trim() ?? '';
-    const hasServerFormattedText = serverFormattedText.length > 0;
-    const nextNotes = hasServerFormattedText ? serverFormattedText : formatVoiceNotesForEditing(response.transcript);
-    setRawNotesFromVoiceInput(nextNotes);
-    if (!hasServerFormattedText) {
-      finalizeVoiceNotesFormatting();
-    }
-    setVoiceStatusMessage('Voice notes processed.');
-  };
-
-  const isLikelyConnectivityIssue = (error: unknown) => {
-    const message = error instanceof Error ? error.message.toLowerCase() : '';
-    return (
-      message.includes('network request failed') ||
-      message.includes('timed out') ||
-      message.includes('timeout') ||
-      message.includes('failed to fetch') ||
-      message.includes('offline')
-    );
-  };
-
-  const processAudioWithOfflineQueue = async (uri: string, options?: { queuedJobId?: string }) => {
-    setIsTranscribing(true);
-    try {
-      await transcribeAndApply(uri);
-      if (options?.queuedJobId) {
-        const current = await loadQueuedJobs();
-        await saveQueuedJobs(current.filter((job) => job.id !== options.queuedJobId));
-      }
-    } catch (error) {
-      if (options?.queuedJobId) {
-        setVoiceStatusMessage('Still waiting for reception or Wi-Fi to process queued recording.');
-      } else if (isLikelyConnectivityIssue(error)) {
-        await queueAudioForLater(uri);
-        Alert.alert(
-          'No Connection',
-          'We saved your recording. Processing will continue when you are back in reception or Wi-Fi.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        const message = error instanceof Error ? error.message : 'Unknown transcription error.';
-        setVoiceStatusMessage('Transcription failed. You can retry when ready.');
-        Alert.alert('Transcription Failed', message);
-      }
-      return false;
-    } finally {
-      setIsTranscribing(false);
-    }
-    return true;
-  };
-
-  const flushQueuedAudioJobs = async () => {
-    if (isFlushingQueueRef.current || isRecording || isRecordingPaused || isTranscribing) {
-      return;
-    }
-
-    isFlushingQueueRef.current = true;
-    try {
-      const current = await loadQueuedJobs();
-      if (current.length === 0) {
-        return;
-      }
-
-      for (const job of current) {
-        const succeeded = await processAudioWithOfflineQueue(job.uri, { queuedJobId: job.id });
-        if (!succeeded) {
-          break;
-        }
-      }
-    } finally {
-      isFlushingQueueRef.current = false;
-    }
-  };
 
   useEffect(() => {
-    flushQueuedAudioJobsRef.current = flushQueuedAudioJobs;
-  });
-
-  const handleStartRecording = async () => {
-    if (isRecording || isRecordingPaused || isTranscribing || recordingRef.current) {
-      return;
-    }
-
-    if (!isTranscribeServiceConfigured()) {
-      Alert.alert(
-        'Transcription Unavailable',
-        'Audio transcription is not configured in this build yet. You can type or paste notes and continue.'
-      );
-      return;
-    }
-
-    try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Microphone Permission Needed', 'Allow microphone access to record voice notes.');
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-      recordingRef.current = recording;
-      setIsRecording(true);
-      setIsRecordingPaused(false);
-      setVoiceStatusMessage('Recording in progress...');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not start recording.';
-      Alert.alert('Recording Unavailable', message);
-    }
-  };
-
-  const handlePauseRecording = async () => {
-    const recording = recordingRef.current;
-    if (!recording || !isRecording) {
-      return;
-    }
-
-    try {
-      await recording.pauseAsync();
-      setIsRecording(false);
-      setIsRecordingPaused(true);
-      setVoiceStatusMessage('Recording paused.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not pause recording.';
-      Alert.alert('Recording Error', message);
-    }
-  };
-
-  const handleResumeRecording = async () => {
-    const recording = recordingRef.current;
-    if (!recording || !isRecordingPaused || isTranscribing) {
-      return;
-    }
-
-    try {
-      await recording.startAsync();
-      setIsRecording(true);
-      setIsRecordingPaused(false);
-      setVoiceStatusMessage('Recording in progress...');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not resume recording.';
-      Alert.alert('Recording Error', message);
-    }
-  };
-
-  const handleStopRecording = async () => {
-    const recording = recordingRef.current;
-    if (!recording || (!isRecording && !isRecordingPaused)) {
-      return;
-    }
-
-    try {
-      setIsRecording(false);
-      setIsRecordingPaused(false);
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      });
-      const uri = recording.getURI();
-      recordingRef.current = null;
-      if (uri) {
-        setVoiceStatusMessage('Processing recording...');
-        await processAudioWithOfflineQueue(uri);
-      }
-    } catch (error) {
-      setIsRecording(false);
-      setIsRecordingPaused(false);
-      const message = error instanceof Error ? error.message : 'Could not stop recording.';
-      Alert.alert('Recording Error', message);
-    }
-  };
-
-  useEffect(() => {
-    if (!hasVoiceAccess) {
+    if (!isPaid) {
       router.replace({ pathname: '/upgrade', params: { feature: 'Voice Notes', returnTo: '/record-notes' } });
     }
-  }, [hasVoiceAccess, router]);
+  }, [isPaid, router]);
 
-  useEffect(() => {
-    void loadQueuedJobs();
-  }, []);
-
-  useEffect(() => {
-    void flushQueuedAudioJobsRef.current();
-  }, [isRecording, isRecordingPaused, isTranscribing]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      void flushQueuedAudioJobsRef.current();
-    }, 15000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
-
-  useEffect(
-    () => () => {
-      const recording = recordingRef.current;
-      if (!recording) {
-        return;
-      }
-      void recording.stopAndUnloadAsync().catch(() => undefined);
-      recordingRef.current = null;
-      void Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => undefined);
-    },
-    []
-  );
-
-  if (!hasVoiceAccess) {
+  if (!isPaid) {
     return null;
   }
 
@@ -382,94 +95,16 @@ export default function RecordNotesScreen() {
           <View style={styles.card}>
             <View style={styles.cardAccent} />
             <Text style={styles.cardEyebrow}>Capture</Text>
-            <View style={styles.cardTitleRow}>
-              <Text style={styles.cardTitle}>Voice Notes</Text>
-              <Pressable
-                onPress={() => {
-                  setRawNotesFromVoiceInput('');
-                }}
-                disabled={!draft.rawNotes.trim()}
-                style={({ pressed }) => [
-                  styles.inlineActionShell,
-                  !draft.rawNotes.trim() ? styles.inlineActionShellDisabled : null,
-                  pressed && draft.rawNotes.trim() ? styles.pressed : null,
-                ]}>
-                <View style={styles.inlineActionHighlight} />
-                <View style={styles.inlineActionFrame}>
-                  <View style={[styles.inlineActionButton, !draft.rawNotes.trim() ? styles.inlineActionButtonDisabled : null]}>
-                    <Text style={styles.inlineActionButtonText}>Clear Voice Notes</Text>
-                  </View>
-                </View>
-              </Pressable>
-            </View>
-            <View style={styles.inputShell}>
-              <TextInput
-                multiline
-                value={draft.rawNotes}
-                onChangeText={(value) => {
-                  setRawNotesFromVoiceInput(value);
-                }}
-                placeholder=""
-                placeholderTextColor="#546878"
-                style={[styles.input, compact ? styles.inputFocused : null]}
-                textAlignVertical="top"
-              />
-              {!draft.rawNotes.trim() ? (
-                <View pointerEvents="none" style={styles.inputTipsOverlay}>
-                  <Text style={styles.inputTipLine}>
-                    {'\u2022'} Press <Text style={styles.inputTipBold}>Record Audio</Text>
-                  </Text>
-                  <Text style={styles.inputTipLine}>
-                    {'\u2022'} Follow steps in the <Text style={styles.inputTipBold}>Fieldcard</Text>
-                  </Text>
-                  <Text style={styles.inputTipContinuation}>below</Text>
-                </View>
-              ) : null}
-            </View>
-            <View style={styles.audioActionRow}>
-              <Pressable
-                onPress={() => {
-                  if (isRecording) {
-                    void handlePauseRecording();
-                    return;
-                  }
-                  if (isRecordingPaused) {
-                    void handleResumeRecording();
-                    return;
-                  }
-                  void handleStartRecording();
-                }}
-                style={({ pressed }) => [styles.voiceActionShell, pressed ? styles.pressed : null]}>
-                <View style={styles.voiceActionHighlight} />
-                <View style={styles.voiceActionFrame}>
-                  <View style={styles.voiceActionButton}>
-                    <Text style={styles.voiceActionButtonText}>
-                      {isRecording ? 'Pause Recording' : isRecordingPaused ? 'Resume Recording' : 'Record Audio'}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-              {isRecording || isRecordingPaused ? (
-                <Pressable onPress={() => void handleStopRecording()} style={({ pressed }) => [styles.voiceActionShell, pressed ? styles.pressed : null]}>
-                  <View style={styles.voiceActionHighlight} />
-                  <View style={styles.voiceActionFrame}>
-                    <View style={[styles.voiceActionButton, styles.stopRecordingButton]}>
-                      <Text style={styles.voiceActionButtonText}>Stop Recording</Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ) : null}
-              {queuedJobs.length > 0 ? (
-                <Pressable
-                  onPress={() => {
-                    void flushQueuedAudioJobs();
-                  }}
-                  style={styles.secondaryOutlineButton}>
-                  <Text style={styles.secondaryOutlineButtonText}>Retry Queued ({queuedJobs.length})</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {voiceStatusMessage ? <Text style={styles.voiceStatus}>{voiceStatusMessage}</Text> : null}
+            <Text style={styles.cardTitle}>Voice Notes</Text>
+            <TextInput
+              multiline
+              value={draft.rawNotes}
+              onChangeText={setRawNotes}
+              placeholder="🎙 Activate your phone mic and speak your voice notes by reading aloud through the field card below."
+              placeholderTextColor="#546878"
+              style={[styles.input, compact ? styles.inputFocused : null]}
+              textAlignVertical="top"
+            />
           </View>
         </View>
 
@@ -478,7 +113,7 @@ export default function RecordNotesScreen() {
         <Pressable
           onPress={() => {
             void (async () => {
-              if (isCreatingProfile || isTranscribing || isRecording || isRecordingPaused || !draft.rawNotes.trim()) {
+              if (isCreatingProfile) {
                 return;
               }
               setIsCreatingProfile(true);
@@ -504,22 +139,16 @@ export default function RecordNotesScreen() {
           }}
           style={({ pressed }) => [
             styles.createShell,
-            !draft.rawNotes.trim() || isTranscribing || isRecording || isRecordingPaused ? styles.disabled : null,
-            pressed && draft.rawNotes.trim() && !isCreatingProfile && !isTranscribing && !isRecording && !isRecordingPaused ? styles.pressed : null,
+            pressed && draft.rawNotes.trim() && !isCreatingProfile ? styles.pressed : null,
           ]}
-          disabled={!draft.rawNotes.trim() || isCreatingProfile || isTranscribing || isRecording || isRecordingPaused}>
+          disabled={!draft.rawNotes.trim() || isCreatingProfile}>
           <View style={styles.createHighlight} />
           <View style={styles.createButtonFrame}>
-            <View style={[styles.createButton, !draft.rawNotes.trim() || isTranscribing || isRecording || isRecordingPaused ? styles.createButtonDisabled : null]}>
+            <View style={styles.createButton}>
               {isCreatingProfile ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator size="small" color="#F4EFE6" />
-                  <Text style={styles.createButtonText}>Creating Profile...</Text>
-                </View>
-              ) : isTranscribing ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color="#F4EFE6" />
-                  <Text style={styles.createButtonText}>Transcribing Recording...</Text>
+                  <Text style={styles.createButtonText}>Rendering Profile...</Text>
                 </View>
               ) : (
                 <Text style={styles.createButtonText}>Create Profile</Text>
@@ -562,8 +191,8 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
           keyboardShouldPersistTaps="handled">
           <View style={styles.guideSection}>
             <Text style={styles.guideSectionTitle}>Metadata</Text>
-            {metadataLines.map((line, index) => (
-              <Text key={`metadata-line-${index}`} style={styles.fieldLine}>
+            {metadataLines.map((line) => (
+              <Text key={line} style={styles.fieldLine}>
                 {line}
               </Text>
             ))}
@@ -571,10 +200,8 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
 
           <View style={styles.guideSection}>
             <Text style={styles.guideSectionTitle}>Snowpack Layers</Text>
-            {layerLines.map((line, index) => (
-              <Text
-                key={`layer-line-${index}`}
-                style={[styles.fieldLine, emphasizedLayerLines.has(line) ? styles.fieldLineEmphasis : null]}>
+            {layerLines.map((line) => (
+              <Text key={line} style={styles.fieldLine}>
                 {line}
               </Text>
             ))}
@@ -582,8 +209,8 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
 
           <View style={styles.guideSection}>
             <Text style={styles.guideSectionTitle}>Temperature</Text>
-            {temperatureLines.map((line, index) => (
-              <Text key={`temperature-line-${index}`} style={styles.fieldLine}>
+            {temperatureLines.map((line) => (
+              <Text key={line} style={styles.fieldLine}>
                 {line}
               </Text>
             ))}
@@ -600,15 +227,6 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
                   </Text>
                 ))}
               </View>
-            ))}
-          </View>
-
-          <View style={styles.guideSection}>
-            <Text style={styles.guideSectionTitle}>Extra Notes</Text>
-            {extraNotesLines.map((line, index) => (
-              <Text key={`extra-notes-line-${index}`} style={styles.fieldLine}>
-                {line}
-              </Text>
             ))}
           </View>
         </ScrollView>
@@ -720,73 +338,15 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     fontWeight: '800',
   },
-  cardTitleRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 10,
-  },
-  inlineActionShell: {
-    minWidth: 136,
-    borderRadius: 8,
-    padding: 2,
-    backgroundColor: '#1B3349',
-  },
-  inlineActionHighlight: {
-    position: 'absolute',
-    top: 2,
-    left: 2,
-    right: 2,
-    height: 6,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.26)',
-  },
-  inlineActionFrame: {
-    borderRadius: 6,
-    padding: 1,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.28)',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255,255,255,0.16)',
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(8,22,39,0.44)',
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(8,22,39,0.62)',
-    backgroundColor: '#173248',
-  },
-  inlineActionButton: {
-    borderRadius: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    backgroundColor: '#5A7891',
-  },
-  inlineActionShellDisabled: {
-    opacity: 0.5,
-  },
-  inlineActionButtonDisabled: {
-    backgroundColor: '#6E7D8A',
-  },
-  inlineActionButtonText: {
-    color: '#F4EFE6',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
   cardCopy: {
     marginTop: 10,
     color: '#55626A',
     fontSize: 16,
     lineHeight: 23,
   },
-  inputShell: {
-    position: 'relative',
-    marginTop: 14,
-  },
   input: {
     minHeight: 244,
+    marginTop: 14,
     borderRadius: 8,
     padding: 16,
     backgroundColor: '#D7E0E8',
@@ -798,99 +358,6 @@ const styles = StyleSheet.create({
   },
   inputFocused: {
     minHeight: 152,
-  },
-  inputTipsOverlay: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    gap: 6,
-  },
-  inputTipLine: {
-    color: '#405463',
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '500',
-  },
-  inputTipBold: {
-    color: '#1F3443',
-    fontWeight: '800',
-  },
-  inputTipContinuation: {
-    marginLeft: 14,
-    color: '#405463',
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '500',
-  },
-  audioActionRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  voiceActionShell: {
-    borderRadius: 8,
-    padding: 2,
-    backgroundColor: '#1B3349',
-  },
-  voiceActionHighlight: {
-    position: 'absolute',
-    top: 2,
-    left: 2,
-    right: 2,
-    height: 8,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.26)',
-  },
-  voiceActionFrame: {
-    borderRadius: 6,
-    padding: 2,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.3)',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255,255,255,0.2)',
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(7,20,36,0.44)',
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(7,20,36,0.62)',
-    backgroundColor: '#173248',
-  },
-  voiceActionButton: {
-    borderRadius: 5,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#5A7891',
-    alignItems: 'center',
-  },
-  stopRecordingButton: {
-    backgroundColor: '#A94C2A',
-  },
-  voiceActionButtonText: {
-    color: '#F4EFE6',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  secondaryOutlineButton: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#A94C2A',
-    alignItems: 'center',
-  },
-  secondaryOutlineButtonText: {
-    color: '#A94C2A',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  voiceStatus: {
-    marginTop: 10,
-    color: '#2A4A61',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
   },
   guideStack: {
     marginTop: 14,
@@ -939,11 +406,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontWeight: '700',
   },
-  fieldLineEmphasis: {
-    fontWeight: '900',
-    fontSize: 13,
-    lineHeight: 16,
-  },
   createShell: {
     borderRadius: 8,
     padding: 3,
@@ -984,20 +446,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B627D',
     alignItems: 'center',
   },
-  createButtonDisabled: {
-    backgroundColor: '#6E7D8A',
-  },
   createButtonText: {
     color: '#FFF8EE',
     fontSize: 18,
     fontWeight: '800',
-  },
-  waitingCopy: {
-    marginTop: -10,
-    color: '#D8E1E7',
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
   },
   loadingRow: {
     flexDirection: 'row',

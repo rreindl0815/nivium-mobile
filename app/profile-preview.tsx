@@ -196,8 +196,8 @@ export default function ProfilePreviewScreen() {
                   {parsed.layers.length === 0 ? (
                     <Text style={styles.itemText}>No layers yet.</Text>
                   ) : (
-                    parsed.layers.map((line, index) => (
-                      <View key={`layer-${index}`} style={styles.layerRow}>
+                    parsed.layers.map((line) => (
+                      <View key={line} style={styles.layerRow}>
                         <View style={[styles.layerMarker, /\bred\b/i.test(line) ? styles.layerMarkerRed : null]} />
                         <Text style={styles.itemText}>{line}</Text>
                       </View>
@@ -217,8 +217,8 @@ export default function ProfilePreviewScreen() {
                   {parsed.temperatures.length === 0 ? (
                     <Text style={styles.itemText}>No temperatures yet.</Text>
                   ) : (
-                    parsed.temperatures.map((line, index) => (
-                      <Text key={`temp-${index}`} style={styles.itemText}>
+                    parsed.temperatures.map((line) => (
+                      <Text key={line} style={styles.itemText}>
                         {line}
                       </Text>
                     ))
@@ -230,8 +230,8 @@ export default function ProfilePreviewScreen() {
                   {parsed.stabilityTests.length === 0 ? (
                     <Text style={styles.itemText}>No tests yet.</Text>
                   ) : (
-                    parsed.stabilityTests.map((line, index) => (
-                      <Text key={`stab-${index}`} style={styles.itemText}>
+                    parsed.stabilityTests.map((line) => (
+                      <Text key={line} style={styles.itemText}>
                         {line}
                       </Text>
                     ))

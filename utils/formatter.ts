@@ -69,8 +69,7 @@ export function formatDraftToEngineText(draft: ProfileDraft): FormatResult {
     })
     .filter((value): value is string => Boolean(value));
 
-  const layerSource = resolveLayerSource(draft);
-  const layerLines = normalizeLayerEntries(layerSource.lines, warnings, concernRange, layerSource.isStructured);
+  const layerLines = normalizeLayerEntries(resolveLayerSourceLines(draft), warnings, concernRange);
 
   const temperatureLines = resolveTemperatureBlock(draft.values);
   const stabilityLines = resolveStabilityBlock(draft.values);
@@ -99,7 +98,7 @@ export function formatRawNotesToEngineText(rawNotes: string): FormatResult {
   return formatDraftToEngineText(draft);
 }
 
-function normalizeLayerEntries(values: string[], warnings: string[], concernRange: string, isStructured: boolean) {
+function normalizeLayerEntries(values: string[], warnings: string[], concernRange: string) {
   const results: string[] = [];
   let previousBottom: number | null = null;
   let previousLine = '';
@@ -107,18 +106,6 @@ function normalizeLayerEntries(values: string[], warnings: string[], concernRang
   for (const value of values) {
     const raw = value.trim();
     if (!raw) {
-      continue;
-    }
-
-    if (isStructured) {
-      const compact = normalizeSpacing(raw.replaceAll(',', ' '));
-      const lineWithConcern = concernRange ? applyConcernRange(compact, concernRange) : compact;
-      results.push(lineWithConcern);
-      const structuredRange = compact.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/);
-      if (structuredRange) {
-        previousBottom = Number(structuredRange[2]);
-      }
-      previousLine = lineWithConcern;
       continue;
     }
 
@@ -132,20 +119,16 @@ function normalizeLayerEntries(values: string[], warnings: string[], concernRang
   return results;
 }
 
-function resolveLayerSource(draft: ProfileDraft) {
-  const structured = buildStructuredLayerLines(draft.values);
-  if (structured.lines.length > 0) {
-    return { lines: structured.lines, isStructured: structured.usedStructuredData };
+function resolveLayerSourceLines(draft: ProfileDraft) {
+  const structuredLines = buildStructuredLayerLines(draft.values);
+  if (structuredLines.length > 0) {
+    return structuredLines;
   }
-  return {
-    lines: layerFieldIds.map((fieldId) => draft.values[fieldId] ?? ''),
-    isStructured: false,
-  };
+  return layerFieldIds.map((fieldId) => draft.values[fieldId] ?? '');
 }
 
 function buildStructuredLayerLines(values: ProfileDraft['values']) {
   const results: string[] = [];
-  let usedStructuredData = false;
   let previousBottom = '';
 
   for (const index of structuredLayerIndexes) {
@@ -182,7 +165,6 @@ function buildStructuredLayerLines(values: ProfileDraft['values']) {
       }
       continue;
     }
-    usedStructuredData = true;
 
     const top = topField || previousBottom || (index === 1 ? '0' : '');
     if (!top || !bottomField) {
@@ -191,13 +173,7 @@ function buildStructuredLayerLines(values: ProfileDraft['values']) {
 
     previousBottom = bottomField;
 
-    // Defensive backfill: if a structured field is missing after an edit/reopen,
-    // recover it from the legacy single-line layer value instead of dropping data.
-    const legacyParts = parseLegacyLayerParts(legacyLine);
-    const resolvedGrain1 = grain1 || legacyParts.grain1;
-    const resolvedGrain2 = grain2 || legacyParts.grain2;
-
-    const grain = [resolvedGrain1, resolvedGrain2].filter(Boolean).join('/');
+    const grain = [grain1, grain2].filter(Boolean).join('/');
     const hardness = [hardness1, hardness2].filter(Boolean).join('-');
     const size = [size1, size2].filter(Boolean).join('/');
 
@@ -206,53 +182,8 @@ function buildStructuredLayerLines(values: ProfileDraft['values']) {
     results.push([mainParts.join(' '), commentPart].filter(Boolean).join(' ').trim());
   }
 
-  return { lines: results, usedStructuredData };
+  return results;
 }
-
-function parseLegacyLayerParts(line: string) {
-  const normalized = normalizeSpacing(line || '');
-  const body = normalized.replace(/^\d+(?:\.\d+)?-\d+(?:\.\d+)?\s+/, '');
-  if (!body) {
-    return {
-      grain1: '',
-      grain2: '',
-      hardness1: '',
-      hardness2: '',
-      size1: '',
-      size2: '',
-    };
-  }
-
-  const main = body.split('|')[0]?.trim() ?? '';
-  const tokens = main
-    .split(' ')
-    .map((token) => token.trim())
-    .filter(Boolean);
-
-  const grainTokens = tokens
-    .flatMap((token) => token.split('/').map((part) => normalizeLegacyGrainToken(part)))
-    .filter(Boolean);
-  return {
-    grain1: grainTokens[0] ?? '',
-    grain2: grainTokens[1] ?? '',
-  };
-}
-
-function normalizeLegacyGrainToken(token: string) {
-  const clean = token.replace(/[.,;]+/g, '').trim();
-  if (!clean) {
-    return '';
-  }
-  const upper = clean.toUpperCase();
-  if (upper === 'FCXR') return 'FCxr';
-  if (upper === 'IFRC') return 'IFrc';
-  if (upper === 'MFCR') return 'MFcr';
-  if (upper === 'PP' || upper === 'DF' || upper === 'RG' || upper === 'FC' || upper === 'SH' || upper === 'DH' || upper === 'MF' || upper === 'IF') {
-    return upper;
-  }
-  return '';
-}
-
 
 function normalizeStructuredSize(value: string) {
   const clean = normalizeSpacing(value);
@@ -410,7 +341,6 @@ function resolveStabilityBlock(values: ProfileDraft['values']) {
 
 function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
   const lines: string[] = [];
-  const seen = new Set<string>();
 
   for (const index of structuredStabilityIndexes) {
     const type = (values[`test_${index}_type`] ?? '').trim();
@@ -433,31 +363,16 @@ function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
       if (!resultLetter) {
         continue;
       }
-      const line = [`CT${resultLetter}${taps}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' ');
-      const key = line.trim().toUpperCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        lines.push(line);
-      }
+      lines.push([`CT${resultLetter}${taps}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' '));
       continue;
     }
 
     if (type === 'ECT') {
       if (result === 'ECTX') {
-        const line = 'ECTX';
-        const key = line.trim().toUpperCase();
-        if (!seen.has(key)) {
-          seen.add(key);
-          lines.push(line);
-        }
+        lines.push('ECTX');
         continue;
       }
-      const line = [`${result}${taps}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' ');
-      const key = line.trim().toUpperCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        lines.push(line);
-      }
+      lines.push([`${result}${taps}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' '));
       continue;
     }
 
@@ -465,31 +380,16 @@ function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
       if (!pstCut || !pstColumn || !depth) {
         continue;
       }
-      const line = [`PST ${pstCut}/${pstColumn} ${result}`.trim(), `at ${depth} cm`].filter(Boolean).join(' ');
-      const key = line.trim().toUpperCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        lines.push(line);
-      }
+      lines.push([`PST ${pstCut}/${pstColumn} ${result}`.trim(), `at ${depth} cm`].filter(Boolean).join(' '));
       continue;
     }
 
     if (type === 'RB') {
-      const line = [result, character, depth ? `at ${depth} cm` : ''].filter(Boolean).join(' ');
-      const key = line.trim().toUpperCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        lines.push(line);
-      }
+      lines.push([result, character, depth ? `at ${depth} cm` : ''].filter(Boolean).join(' '));
       continue;
     }
 
-    const line = [`${type} ${result.toLowerCase()}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' ');
-    const key = line.trim().toUpperCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      lines.push(line);
-    }
+    lines.push([`${type} ${result.toLowerCase()}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' '));
   }
 
   return lines.join('\n');

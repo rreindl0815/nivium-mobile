@@ -1,86 +1,50 @@
-# Nivium Mobile App
+# Welcome to your Expo app 👋
 
-This Expo app captures snow profiles through two paths:
+This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
-- structured manual entry for the free/manual workflow
-- raw notes / dictation for the later paid AI workflow
+## Get started
 
-Both paths are intended to converge on the same engine-ready formatter output and
-then render a plotted Nivium profile.
+1. Install dependencies
 
-## Core Commands
+   ```bash
+   npm install
+   ```
 
-Install dependencies:
+2. Start the app
 
-```bash
-npm install
-```
+   ```bash
+   npx expo start
+   ```
 
-Start the Expo app:
+In the output, you'll find options to open the app in a
 
-```bash
-npm run start
-```
+- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
+- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-Run typecheck:
+You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
-```bash
-npx tsc --noEmit
-```
+## Get a fresh project
 
-Start the local plotted-render service:
-
-```bash
-npm run render:service
-```
-
-Start the local raw-notes formatter service:
+When you're ready, run:
 
 ```bash
-npm run format:service
+npm run reset-project
 ```
 
-## Plotted Renderer Flow
+This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
-The app now has a renderer abstraction at:
+## Learn more
 
-- `utils/profile-renderer.ts`
+To learn more about developing your project with Expo, look at the following resources:
 
-Current behavior:
+- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
+- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
-- if `EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT` is configured, the app will try to fetch a
-  plotted Nivium PDF from that endpoint
-- otherwise it falls back to the existing report PDF output
+## Join the community
 
-See the backend contract here:
+Join our community of developers creating universal apps.
 
-- `NIVIUM_RENDER_BACKEND_CONTRACT.md`
-
-## Raw Notes Formatter Flow
-
-The paid raw-notes path now has a formatter abstraction at:
-
-- `utils/formatter-service.ts`
-
-Current behavior:
-
-- if `EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT` is configured, raw notes will be sent to that endpoint
-- if the formatter call fails, raw notes are still saved locally and routed to the waiting screen
-- for local development, `npm run format:service` provides a formatter backend that can run in:
-  - `local-mock` mode using the current local parser/formatter logic
-  - `openai` mode when `OPENAI_API_KEY` is set
-
-See the formatter backend contract here:
-
-- `NIVIUM_FORMATTER_BACKEND_CONTRACT.md`
-
-## Renderer Assets
-
-The active Nivium renderer lab lives here:
-
-- `nivium-renderer-lab/Nivium_Profile_Template.svg`
-- `nivium-renderer-lab/Nivium_Profile_Template_PRINTSAFE.png`
-- `nivium-renderer-lab/Nivium_logo_transparent.svg`
-- `nivium-renderer-lab/skeena_profile_engine_nivium_v2.py`
-
-The original live Skeena engine is intentionally kept separate and should remain untouched.
+- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
+- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
