@@ -777,6 +777,7 @@ function normalizeStabilityFormatting(line: string) {
   return line
     .trim()
     .replace(/\bIn\s+a\s+PST\s+(\d+(?:\.\d+)?)\s*(?:\/|over)\s*(\d+(?:\.\d+)?)\s+and\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 END at $3 cm')
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s*(?:\/|over)\s*(\d+(?:\.\d+)?)\s+and\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 END at $3 cm')
     .replace(/\bPST\s+(\d+(?:\.\d+)?)\s+over\s+(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
     .replace(/\bECTP\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
     .replace(/\b(ECT[PNX])\s+(\d{1,2})\b/i, '$1$2')
@@ -2001,6 +2002,7 @@ function collectHardnessCueByBottom(rawNotes?: string) {
   let lastLayerBottom: number | null = null;
   let lastLayerClauseIndex = -9999;
   const firstMentionByBottom = new Map<number, string>();
+  const pendingTransitionCueByBottom = new Map<number, number>();
 
   for (let i = 0; i < clauses.length; i += 1) {
     const clause = clauses[i];
@@ -2015,7 +2017,7 @@ function collectHardnessCueByBottom(rawNotes?: string) {
     const normalized = clause.toLowerCase();
     const targetBottom = Number.isFinite(bottom)
       ? bottom
-      : lastLayerBottom !== null && i - lastLayerClauseIndex <= 2
+      : lastLayerBottom !== null && i - lastLayerClauseIndex <= 8
         ? lastLayerBottom
         : NaN;
     if (!Number.isFinite(targetBottom)) {
@@ -2028,6 +2030,10 @@ function collectHardnessCueByBottom(rawNotes?: string) {
       /\bhardness\s*2\b/.test(normalized) ||
       /\bhardness\s*two\b/.test(normalized) ||
       /\bsecond\s+hardness\b/.test(normalized);
+
+    if (hasTransitionCue) {
+      pendingTransitionCueByBottom.set(targetBottom, i);
+    }
 
     if (spokenMentions.length > 0 && !firstMentionByBottom.has(targetBottom)) {
       firstMentionByBottom.set(targetBottom, spokenMentions[0]);
@@ -2054,6 +2060,20 @@ function collectHardnessCueByBottom(rawNotes?: string) {
       if (first && second && first !== second) {
         overrides.set(targetBottom, `${first}-${second}`);
         continue;
+      }
+    }
+
+    // Cross-clause transition recovery:
+    // "pencil hardness, hardness 2, one finger plus" often arrives as separate clauses.
+    if (spokenMentions.length === 1 && !hasTransitionCue) {
+      const cueIndex = pendingTransitionCueByBottom.get(targetBottom);
+      if (cueIndex !== undefined && i - cueIndex <= 3) {
+        const first = firstMentionByBottom.get(targetBottom) ?? '';
+        const second = spokenMentions[0];
+        if (first && second && first !== second) {
+          overrides.set(targetBottom, `${first}-${second}`);
+          continue;
+        }
       }
     }
 
