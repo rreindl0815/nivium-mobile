@@ -1,27 +1,40 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Image, ImageBackground, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
 
 export default function UpgradeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ feature?: string; returnTo?: string }>();
-  const { accessSource, presentPaywall, purchasesConfigured, restorePurchases } = useAppAccess();
+  const { accessSource, presentPaywall, purchasesConfigured, purchaseConfigIssue, restorePurchases } = useAppAccess();
+  const [isOpeningPaywall, setIsOpeningPaywall] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const feature = params.feature ?? 'This feature';
+  const termsUrl = 'https://nivium.ca/terms.html';
+  const privacyUrl = 'https://nivium.ca/privacy.html';
+
+  const purchaseUnavailableMessage =
+    purchaseConfigIssue === 'missing-api-key'
+      ? 'Paid plans are not configured for this platform build yet. Please try again shortly.'
+      : purchaseConfigIssue === 'unsupported-platform'
+        ? 'Purchases are unavailable on web. Please open Nivium on iOS or Android.'
+        : 'Paid plans are temporarily unavailable in this build. Please try again shortly.';
 
   const handlePaidAccess = () => {
     void (async () => {
+      if (isOpeningPaywall || isRestoring) {
+        return;
+      }
       if (!purchasesConfigured) {
-        Alert.alert(
-          'Purchases Unavailable',
-          'Paid plans are temporarily unavailable in this build. Please try again shortly.'
-        );
+        Alert.alert('Purchases Unavailable', purchaseUnavailableMessage);
         return;
       }
 
+      setIsOpeningPaywall(true);
       try {
-        const unlocked = await presentPaywall();
-        if (unlocked) {
+        const result = await presentPaywall();
+        if (result.status === 'purchased') {
           if (params.returnTo) {
             router.replace(params.returnTo as never);
             return;
@@ -29,28 +42,54 @@ export default function UpgradeScreen() {
           router.replace('/');
           return;
         }
-        Alert.alert(
-          'Paid Access Not Active Yet',
-          'No active paid entitlement was found yet. Please complete purchase or tap Restore Purchases.'
-        );
-      } catch {
-        Alert.alert('Unable To Open Paywall', 'Please try again in a moment.');
+        if (result.status === 'cancelled') {
+          return;
+        }
+        if (result.status === 'unavailable') {
+          Alert.alert('Purchases Unavailable', result.message ?? purchaseUnavailableMessage);
+          return;
+        }
+        if (result.status === 'error') {
+          Alert.alert(
+            'Unable To Open Paywall',
+            result.message
+              ? `Please try again in a moment.\n\nDetails: ${result.message}`
+              : 'Please try again in a moment.'
+          );
+          return;
+        }
+        Alert.alert('Paid Access Not Active Yet', 'Please complete purchase or tap Restore Purchases.');
+      } finally {
+        setIsOpeningPaywall(false);
       }
     })();
   };
 
   const handleRestorePurchases = () => {
     void (async () => {
+      if (isOpeningPaywall || isRestoring) {
+        return;
+      }
       if (!purchasesConfigured) {
-        Alert.alert(
-          'Restore Unavailable',
-          'We cannot restore purchases right now. Please try again shortly.'
-        );
+        Alert.alert('Restore Unavailable', purchaseUnavailableMessage);
         return;
       }
 
+      setIsRestoring(true);
       try {
-        const restored = await restorePurchases();
+        const result = await restorePurchases();
+        if (result.status === 'unavailable') {
+          Alert.alert('Restore Unavailable', result.message ?? purchaseUnavailableMessage);
+          return;
+        }
+        if (result.status === 'error') {
+          Alert.alert(
+            'Restore Failed',
+            result.message ? `Please try again in a moment.\n\nDetails: ${result.message}` : 'Please try again in a moment.'
+          );
+          return;
+        }
+        const restored = result.status === 'restored';
         Alert.alert(
           restored ? 'Access Restored' : 'No Purchases Found',
           restored
@@ -64,9 +103,20 @@ export default function UpgradeScreen() {
           }
           router.replace('/');
         }
-      } catch {
-        Alert.alert('Restore Failed', 'Please try again in a moment.');
+      } finally {
+        setIsRestoring(false);
       }
+    })();
+  };
+
+  const handleOpenLink = (url: string, label: string) => {
+    void (async () => {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert('Link Unavailable', `Could not open ${label} right now.`);
+        return;
+      }
+      await Linking.openURL(url);
     })();
   };
 
@@ -92,29 +142,51 @@ export default function UpgradeScreen() {
               Paid access unlocks Voice Notes, Archive, Share, and Print. Free access stays focused on Manual Data Entry and viewing
               the finished plotted profile.
             </Text>
+            <Text style={styles.cardCopy}>
+              Auto-renewable subscriptions: Nivium Pro Monthly (1 month) and Nivium Pro Yearly (1 year). The App Store paywall
+              shows the current price and billing period before purchase.
+            </Text>
             <Text style={styles.modeCopy}>
               Current access: {accessSource === 'subscription' ? 'Paid Subscription' : 'Free'}
             </Text>
+            <View style={styles.linkRow}>
+              <Pressable onPress={() => handleOpenLink(privacyUrl, 'Privacy Policy')} style={styles.linkButton}>
+                <Text style={styles.linkText}>Privacy Policy</Text>
+              </Pressable>
+              <Text style={styles.linkDivider}>•</Text>
+              <Pressable onPress={() => handleOpenLink(termsUrl, 'Terms of Use (EULA)')} style={styles.linkButton}>
+                <Text style={styles.linkText}>Terms of Use (EULA)</Text>
+              </Pressable>
+            </View>
 
             <View style={styles.actionStack}>
-              <Pressable onPress={handlePaidAccess} style={styles.primaryShell}>
+              <Pressable
+                onPress={handlePaidAccess}
+                style={[styles.primaryShell, isOpeningPaywall || isRestoring ? styles.disabledShell : null]}
+                disabled={isOpeningPaywall || isRestoring}>
                 <View style={styles.primaryHighlight} />
                 <View style={styles.primaryFrame}>
                   <View style={styles.primaryButton}>
-                    <Text style={styles.primaryText}>View Paid Access</Text>
+                    <Text style={styles.primaryText}>{isOpeningPaywall ? 'Opening Paywall...' : 'View Paid Access'}</Text>
                   </View>
                 </View>
               </Pressable>
 
               <View style={styles.row}>
-                <Pressable onPress={handleRestorePurchases} style={styles.secondaryShell}>
+                <Pressable
+                  onPress={handleRestorePurchases}
+                  style={[styles.secondaryShell, isOpeningPaywall || isRestoring ? styles.disabledShell : null]}
+                  disabled={isOpeningPaywall || isRestoring}>
                   <View style={styles.secondaryFrame}>
                     <View style={styles.secondaryButton}>
-                      <Text style={styles.secondaryText}>Restore Purchases</Text>
+                      <Text style={styles.secondaryText}>{isRestoring ? 'Restoring...' : 'Restore Purchases'}</Text>
                     </View>
                   </View>
                 </Pressable>
-                <Pressable onPress={() => router.replace('/')} style={styles.secondaryShell}>
+                <Pressable
+                  onPress={() => router.replace('/')}
+                  style={[styles.secondaryShell, isOpeningPaywall || isRestoring ? styles.disabledShell : null]}
+                  disabled={isOpeningPaywall || isRestoring}>
                   <View style={styles.secondaryFrame}>
                     <View style={styles.secondaryButton}>
                       <Text style={styles.secondaryText}>Home</Text>
@@ -242,6 +314,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  linkRow: {
+    marginTop: 8,
+    marginBottom: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  linkButton: {
+    paddingVertical: 2,
+  },
+  linkText: {
+    color: '#D6E8F6',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  linkDivider: {
+    color: '#AFC3CE',
+    fontSize: 13,
+    lineHeight: 18,
+  },
   actionStack: {
     marginTop: 18,
     gap: 10,
@@ -249,6 +344,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: 10,
+  },
+  disabledShell: {
+    opacity: 0.6,
   },
   primaryShell: {
     borderRadius: 8,

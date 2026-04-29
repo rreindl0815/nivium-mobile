@@ -235,12 +235,14 @@ function extractLayerLines(rawNotes: string) {
       continue;
     }
 
-    const top = explicitMatch ? explicitMatch[1] : previousBottom!;
+    let top = explicitMatch ? explicitMatch[1] : previousBottom!;
     const bottom = explicitMatch ? explicitMatch[2] : continuationMatch![1];
     let tail = explicitMatch ? explicitMatch[3].trim() : continuationMatch![2].trim();
     tail = tail
       .replace(/^[:, -]+/, '')
       .replace(/^cm[:, ]*/i, '')
+      // Occasional sentence-split artifact from "... centimeters. ..." can leave a stray leading "s".
+      .replace(/^s(?:\s+|[:, -]+)/i, '')
       .replace(/\bcentimeters?\b/gi, '')
       .replace(/\bcentimetres?\b/gi, '')
       .replace(/\bnext layer\b/gi, '')
@@ -258,6 +260,21 @@ function extractLayerLines(rawNotes: string) {
 
     if (!tail) {
       continue;
+    }
+
+    if (explicitMatch && previousBottom) {
+      const previousBottomNum = Number(previousBottom);
+      const spokenTopNum = Number(top);
+      const bottomNum = Number(bottom);
+      if (
+        Number.isFinite(previousBottomNum) &&
+        Number.isFinite(spokenTopNum) &&
+        Number.isFinite(bottomNum) &&
+        bottomNum > previousBottomNum &&
+        spokenTopNum !== previousBottomNum
+      ) {
+        top = previousBottom;
+      }
     }
 
     if (/^to\s+(?:fist|four[- ]finger|4[- ]finger|one[- ]finger|1[- ]finger|pencil(?:\s+plus)?|knife|ice)\b/i.test(tail)) {

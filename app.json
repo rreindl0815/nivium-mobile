@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nivium",
     "slug": "nivium",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "nivium",
@@ -12,11 +12,12 @@
       "bundleIdentifier": "ca.nivium.app",
       "supportsTablet": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Nivium records voice notes for snow profile documentation."
       }
     },
     "android": {
-      "package": "ca.nivium.app",
+      "package": "ca.nivium.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

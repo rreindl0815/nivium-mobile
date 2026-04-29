@@ -5,25 +5,26 @@ import { fieldCardSections } from '@/data/field-card';
 
 const guideLines: Record<string, string[]> = {
   metadata: [
-    'Say the date and time first.',
-    'State run name or location, observer, and organization.',
-    'Give elevation, aspect, slope angle, and lat / long.',
-    'Finish with air temperature, sky, precip, wind, total Hs, and surface grain.',
+    'Start with: Date, Time, Run Name, Observer, Organization.',
+    'Then say: Elevation, Aspect, Slope Angle, Lat / Long.',
+    'Finish weather/snow: Air Temperature, Sky, Precip, Wind, Total Hs, Surface Grain, Foot Pen, Ski Pen.',
+    'Say one field per phrase. If you correct a field, restate the full field clearly.',
   ],
   layers: [
-    'Call each layer from top to bottom.',
-    'Say top and bottom depth, then hardness, grain form, grain size, and comments.',
-    'If a layer is a concern, say that layer is red.',
+    'Use this sequence: "First layer from X to Y ...".',
+    'Then continue: "Next layer down to Z ...". Repeat until complete.',
+    'For each layer, say: depth range, grain, hardness, then grain size.',
+    'If needed, add "this layer red" and any short layer comment.',
   ],
   temperatures: [
-    'Start at surface or zero depth.',
-    'Then continue by depth in order downward.',
-    'Say one temperature reading at a time.',
+    'Start at surface, then move downward by depth.',
+    'Say one line at a time: "-10 surface", "-6 40 cm", "-2 100 cm".',
+    'Keep depths increasing downward for the cleanest result.',
   ],
   tests: [
-    'Say one stability test at a time.',
-    'Include test type, result, taps if relevant, fracture character, and depth.',
-    'Add any extra notes at the end.',
+    'Say one complete stability test per line.',
+    'Include test code/details and depth: "ECTP14 at 41 cm", "PST 40/100 ARR at 46 cm".',
+    'Say notes only after all tests are done.',
   ],
 };
 
@@ -39,7 +40,7 @@ export default function FieldcardGuideScreen() {
             <View style={styles.cardAccent} />
             <Text style={styles.eyebrow}>Field Card</Text>
             <Text style={styles.title}>Follow Field Card for Voice Notes</Text>
-            <Text style={styles.copy}>Use this as the spoken order while recording voice notes.</Text>
+            <Text style={styles.copy}>Read this top to bottom while recording so the formatter hears a clean sequence.</Text>
           </View>
         </View>
 
@@ -50,8 +51,8 @@ export default function FieldcardGuideScreen() {
               <View style={styles.cardAccent} />
               <Text style={styles.sectionTitle}>{section.title}</Text>
               <Text style={styles.sectionDescription}>{section.description}</Text>
-              {guideLines[section.id]?.map((line) => (
-                <Text key={line} style={styles.bullet}>
+              {guideLines[section.id]?.map((line, index) => (
+                <Text key={`${section.id}-bullet-${index}`} style={styles.bullet}>
                   {`• ${line}`}
                 </Text>
               ))}

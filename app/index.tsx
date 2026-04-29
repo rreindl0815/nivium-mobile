@@ -35,6 +35,8 @@ const outputActions = [
 export default function HomeScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
+  const hasVoiceAccess = __DEV__ || isPaid;
+  const hasArchiveAccess = __DEV__ || isPaid;
 
   const handlePaidOnlyPress = (title: string, route: string) => {
     if (isPaid) {
@@ -74,6 +76,10 @@ export default function HomeScreen() {
               key={action.title}
               onPress={() => {
                 if (action.requiresPaid) {
+                  if (hasVoiceAccess) {
+                    router.push(action.route);
+                    return;
+                  }
                   handlePaidOnlyPress(action.title, action.route);
                   return;
                 }
@@ -109,6 +115,10 @@ export default function HomeScreen() {
               key={action.title}
               onPress={() => {
                 if (action.requiresPaid) {
+                  if (hasArchiveAccess) {
+                    router.push(action.route);
+                    return;
+                  }
                   handlePaidOnlyPress(action.title, action.route);
                   return;
                 }

@@ -6,15 +6,28 @@ import { Platform } from 'react-native';
 
 type AppTier = 'free' | 'paid';
 type AccessSource = 'free' | 'subscription';
+type PaywallResultStatus = 'purchased' | 'not-entitled' | 'cancelled' | 'unavailable' | 'error';
+type RestoreResultStatus = 'restored' | 'not-found' | 'unavailable' | 'error';
+
+export type PaywallResult = {
+  status: PaywallResultStatus;
+  message?: string;
+};
+
+export type RestoreResult = {
+  status: RestoreResultStatus;
+  message?: string;
+};
 
 type AppAccessContextValue = {
   tier: AppTier;
   isPaid: boolean;
   accessSource: AccessSource;
   purchasesConfigured: boolean;
+  purchaseConfigIssue: 'unsupported-platform' | 'missing-api-key' | 'configure-failed' | null;
   setTier: (tier: AppTier) => Promise<void>;
-  presentPaywall: () => Promise<boolean>;
-  restorePurchases: () => Promise<boolean>;
+  presentPaywall: () => Promise<PaywallResult>;
+  restorePurchases: () => Promise<RestoreResult>;
 };
 
 const STORAGE_KEY = 'nivium-app-tier-v2';
@@ -39,10 +52,22 @@ function hasPaidEntitlement(customerInfo: CustomerInfo | null) {
   return Boolean(customerInfo?.entitlements.active?.[REVENUECAT_ENTITLEMENT_ID]);
 }
 
+function describeError(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+  return 'Unknown purchase error.';
+}
+
 export function AppAccessProvider({ children }: { children: React.ReactNode }) {
   const [tier, setTierState] = useState<AppTier>(DEFAULT_TIER);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
   const [purchasesConfigured, setPurchasesConfigured] = useState(false);
+  const [purchaseConfigIssue, setPurchaseConfigIssue] =
+    useState<AppAccessContextValue['purchaseConfigIssue']>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -73,8 +98,15 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const apiKey = getRevenueCatApiKey();
-    if (!apiKey || Platform.OS === 'web') {
+    if (Platform.OS === 'web') {
       setPurchasesConfigured(false);
+      setPurchaseConfigIssue('unsupported-platform');
+      return;
+    }
+
+    if (!apiKey) {
+      setPurchasesConfigured(false);
+      setPurchaseConfigIssue('missing-api-key');
       return;
     }
 
@@ -88,6 +120,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
       }
       Purchases.configure({ apiKey });
       setPurchasesConfigured(true);
+      setPurchaseConfigIssue(null);
       Purchases.addCustomerInfoUpdateListener(listener);
       void Purchases.getCustomerInfo()
         .then((info) => {
@@ -98,6 +131,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
         });
     } catch {
       setPurchasesConfigured(false);
+      setPurchaseConfigIssue('configure-failed');
     }
 
     return () => {
@@ -114,13 +148,14 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
       isPaid: testerUnlockActive || subscriptionActive,
       accessSource: subscriptionActive ? 'subscription' : 'free',
       purchasesConfigured,
+      purchaseConfigIssue,
       setTier: async (nextTier) => {
         setTierState(nextTier);
         await AsyncStorage.setItem(STORAGE_KEY, nextTier);
       },
       presentPaywall: async () => {
         if (!purchasesConfigured) {
-          return false;
+          return { status: 'unavailable', message: 'Purchases are not configured for this build.' };
         }
         try {
           const offerings = await Purchases.getOfferings().catch(() => null);
@@ -129,39 +164,56 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
             (offerings
               ? Object.values(offerings.all).find((offering) => offering.availablePackages.length > 0)
               : undefined);
+          if (!fallbackOffering || fallbackOffering.availablePackages.length === 0) {
+            return {
+              status: 'unavailable',
+              message: 'No purchasable plans were returned from the App Store for this build.',
+            };
+          }
 
           try {
             await RevenueCatUI.presentPaywall({
-              ...(fallbackOffering ? { offering: fallbackOffering } : {}),
+              offering: fallbackOffering,
               displayCloseButton: true,
             });
-          } catch {
+          } catch (paywallError) {
+            const message = describeError(paywallError);
+            if (/cancel/i.test(message)) {
+              return { status: 'cancelled' };
+            }
             await RevenueCatUI.presentPaywallIfNeeded({
               requiredEntitlementIdentifier: REVENUECAT_ENTITLEMENT_ID,
-              ...(fallbackOffering ? { offering: fallbackOffering } : {}),
+              offering: fallbackOffering,
               displayCloseButton: true,
             });
           }
 
           const refreshedCustomerInfo = await Purchases.getCustomerInfo();
           setCustomerInfo(refreshedCustomerInfo);
-          return hasPaidEntitlement(refreshedCustomerInfo);
-        } catch {
-          return false;
+          return hasPaidEntitlement(refreshedCustomerInfo)
+            ? { status: 'purchased' }
+            : { status: 'not-entitled' };
+        } catch (error) {
+          return { status: 'error', message: describeError(error) };
         }
       },
       restorePurchases: async () => {
         if (!purchasesConfigured) {
-          return false;
+          return { status: 'unavailable', message: 'Purchases are not configured for this build.' };
         }
-
-        const restoredCustomerInfo = await Purchases.restorePurchases();
-        setCustomerInfo(restoredCustomerInfo);
-        return hasPaidEntitlement(restoredCustomerInfo);
+        try {
+          const restoredCustomerInfo = await Purchases.restorePurchases();
+          setCustomerInfo(restoredCustomerInfo);
+          return hasPaidEntitlement(restoredCustomerInfo)
+            ? { status: 'restored' }
+            : { status: 'not-found' };
+        } catch (error) {
+          return { status: 'error', message: describeError(error) };
+        }
       },
     };
     },
-    [customerInfo, purchasesConfigured, tier]
+    [customerInfo, purchaseConfigIssue, purchasesConfigured, tier]
   );
 
   return <AppAccessContext.Provider value={value}>{children}</AppAccessContext.Provider>;
