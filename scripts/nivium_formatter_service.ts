@@ -802,6 +802,8 @@ function cleanupStabilityFalsePositives(lines: string[], rawNotes?: string) {
   const hasCt = normalized.some((line) => /^CT(?:E|M|H)\d+\b/i.test(line));
   const hasPst = normalized.some((line) => /^PST\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?\s+(?:END|ARR|SF)\s+at\s+\d+(?:\.\d+)?\s*cm\b/i.test(line));
   const rawMentionsPst = /\bpropagation\s+saw\s+test\b|\bPST\b/i.test(rawNotes ?? '');
+  const rawMentionsCt = /\bcompression\s+test\b|\bCT\b/i.test(rawNotes ?? '');
+  const rawMentionsEct = /\bECT\b|\bextended\s+column\b/i.test(rawNotes ?? '');
 
   const filtered = normalized.filter((line) => {
     const compact = line.trim();
@@ -809,6 +811,7 @@ function cleanupStabilityFalsePositives(lines: string[], rawNotes?: string) {
     if (/^ECT[PNX]?\d*$/i.test(compact)) return false;
     if (hasCt && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
     if ((hasPst || rawMentionsPst) && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
+    if (rawMentionsCt && !rawMentionsEct && /^ECT[PNX]?\d*(?:\s+at\s+\d+(?:\.\d+)?\s*cm)?$/i.test(compact)) return false;
     return true;
   });
 
@@ -2156,8 +2159,68 @@ type ValidatedLayerLine = {
   bottom: number;
 };
 
-function parseAndValidateLayerLine(line: string): ValidatedLayerLine {
+function canonicalizeLayerLine(line: string) {
   const normalized = line.trim().replace(/\s+/g, ' ');
+  const split = normalized.split('|');
+  const main = split[0]?.trim() ?? '';
+  const comment = split.slice(1).join('|').trim();
+  const rangeMatch = main.match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)(?:\s+|$)/);
+  if (!rangeMatch) {
+    return normalized;
+  }
+
+  const range = `${rangeMatch[1]}-${rangeMatch[2]}`;
+  const rawTail = main.slice(rangeMatch[0].length).trim();
+  const tokens = rawTail.split(' ').map((t) => t.trim()).filter(Boolean);
+  if (tokens.length === 0) {
+    return normalized;
+  }
+
+  const hasRed = tokens.some((t) => /^red$/i.test(t));
+  let hasCrust = tokens.some((t) => /^crust$/i.test(t));
+  const size = tokens.find((t) => isSizeToken(t)) ?? '';
+  const hardness = tokens.find((t) => isLayerHardnessToken(t)) ?? '';
+
+  const grainParts: string[] = [];
+  for (const token of tokens) {
+    if (LAYER_GRAIN_TOKEN.test(token)) {
+      grainParts.push(token);
+      continue;
+    }
+    const normalizedGrain = normalizeLayerGrainFromTokens([token]);
+    if (normalizedGrain && LAYER_GRAIN_TOKEN.test(normalizedGrain)) {
+      grainParts.push(normalizedGrain);
+    }
+  }
+
+  let grain = '';
+  if (grainParts.length > 0) {
+    const first = grainParts[0];
+    if (first.includes('/')) {
+      grain = first;
+    } else if (grainParts.length > 1) {
+      grain = `${grainParts[0]}/${grainParts[1]}`;
+    } else {
+      grain = first;
+    }
+  }
+  if (!grain) {
+    grain = 'RG';
+  }
+
+  if (/^(IFrc|MFcr)$/i.test(grain)) {
+    hasCrust = true;
+  }
+  const canonicalHardness = hardness || (/^(IFrc|MFcr)$/i.test(grain) ? 'K' : '1F');
+  const mainParts = [range, grain, canonicalHardness, hasCrust ? 'crust' : '', size, hasRed ? 'red' : ''].filter(Boolean);
+  if (!comment) {
+    return mainParts.join(' ');
+  }
+  return `${mainParts.join(' ')} | ${comment}`;
+}
+
+function parseAndValidateLayerLine(line: string): ValidatedLayerLine {
+  const normalized = canonicalizeLayerLine(line);
   const split = normalized.split('|');
   const main = split[0]?.trim() ?? '';
   if (!main) {
@@ -2206,7 +2269,7 @@ function parseAndValidateLayerLine(line: string): ValidatedLayerLine {
   }
 
   return {
-    line,
+    line: normalized,
     top: range.top,
     bottom: range.bottom,
   };
@@ -2232,6 +2295,8 @@ function validateLayerBlockOrThrow(lines: string[]) {
 
     previousBottom = layer.bottom;
   }
+
+  return validated.map((layer) => layer.line);
 }
 
 function isLayerValidationError(error: unknown) {
@@ -2267,7 +2332,7 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
   );
   const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
   const layersWithCleanComments = sanitizeLayerComments(layersWithSizeHints);
-  validateLayerBlockOrThrow(layersWithCleanComments);
+  const canonicalLayers = validateLayerBlockOrThrow(layersWithCleanComments);
   const stability = sections.stability
     .filter((line) => !isMalformedPseudoStability(line))
     .filter((line) => isCompleteStabilityLine(line));
@@ -2279,7 +2344,7 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
 
   return [
     metadataLines.join('\n'),
-    layersWithCleanComments.join('\n'),
+    canonicalLayers.join('\n'),
     sections.temperatures.join('\n'),
     normalizedStability.join('\n'),
     notes.join('\n'),
