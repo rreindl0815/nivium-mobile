@@ -2336,23 +2336,11 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
     }
     return `Total Hs: ${totalHs.replace(/[^\d.]/g, '')} cm`;
   });
-  const layers = applyImplicitConcernCue(
-    applyResolvedRedHints(
-      applyRawNotesTransitionHints(
-        applyResolvedLayerTransitionHints(sanitizeAiLayerLines(sections.layers), resolvedValues),
-        rawNotes
-      ),
-      resolvedValues
-    ),
-    rawNotes
-  );
-  const layersWithInlineCues = applyInlineRedCueByBottom(
-    applyFacetsCueByBottom(applyHardnessCueByBottom(applySurfaceHoarByBottom(layers, rawNotes), rawNotes), rawNotes),
-    rawNotes
-  );
-  const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
-  const layersWithCleanComments = sanitizeLayerComments(layersWithSizeHints);
-  const canonicalLayers = validateLayerBlockOrThrow(layersWithCleanComments);
+  // SPE-style controlled flow:
+  // 1) trust single AI formatter authority
+  // 2) only canonicalize + validate, no cross-layer "smart merge" rewrites
+  const authoritativeLayers = sanitizeAiLayerLines(sections.layers);
+  const canonicalLayers = validateLayerBlockOrThrow(authoritativeLayers);
   const stability = sections.stability
     .filter((line) => !isMalformedPseudoStability(line))
     .filter((line) => isCompleteStabilityLine(line));
