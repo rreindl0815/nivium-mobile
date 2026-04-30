@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 import { formatDraftToEngineText, formatRawNotesToEngineText } from '../utils/formatter';
 import { extractDraftValuesFromRawNotes } from '../utils/raw-note-parser';
@@ -26,6 +27,8 @@ const OPENAI_MODEL = process.env.OPENAI_FORMATTER_MODEL?.trim() || 'gpt-4.1-mini
 const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL?.trim() || 'gpt-4o-mini-transcribe';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
 const FORMATTER_AUDIT_DIR = process.env.NIVIUM_FORMATTER_AUDIT_DIR?.trim() || '/tmp/nivium-formatter-audit';
+const TRANSCRIBE_CACHE_MAX = Number(process.env.NIVIUM_TRANSCRIBE_CACHE_MAX || 100);
+const transcribeResponseCache = new Map<string, FormatterResponse & { transcript: string }>();
 
 const FORMATTER_SYSTEM_PROMPT = `You are Nivium's snow-profile formatter.
 
@@ -764,6 +767,50 @@ async function formatWithOpenAI(rawNotes: string): Promise<FormatterResponse> {
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
     resolvedValues,
   };
+}
+
+function formatTranscriptDeterministic(transcript: string): FormatterResponse {
+  const resolvedValues = extractDraftValuesFromRawNotes(transcript);
+  const localDraft: ProfileDraft = {
+    rawNotes: transcript,
+    values: resolvedValues,
+    updatedAt: new Date().toISOString(),
+  };
+  const localFormatted = formatDraftToEngineText(localDraft);
+  const sanitizedText = sanitizeAiOnlyFormattedText(localFormatted.formattedText, resolvedValues, transcript);
+
+  return {
+    formatterVersion: 'nivium-ai-v1',
+    formattedText: sanitizedText,
+    warnings: localFormatted.warnings ?? [],
+    resolvedValues,
+  };
+}
+
+function hashAudioBuffer(input: Buffer) {
+  return createHash('sha256').update(input).digest('hex');
+}
+
+function getCachedTranscribeResponse(key: string) {
+  const cached = transcribeResponseCache.get(key);
+  if (!cached) {
+    return null;
+  }
+  // LRU touch
+  transcribeResponseCache.delete(key);
+  transcribeResponseCache.set(key, cached);
+  return cached;
+}
+
+function setCachedTranscribeResponse(key: string, value: FormatterResponse & { transcript: string }) {
+  transcribeResponseCache.set(key, value);
+  if (transcribeResponseCache.size <= TRANSCRIBE_CACHE_MAX) {
+    return;
+  }
+  const firstKey = transcribeResponseCache.keys().next().value;
+  if (typeof firstKey === 'string') {
+    transcribeResponseCache.delete(firstKey);
+  }
 }
 
 function isCompleteStabilityLine(line: string) {
@@ -2522,20 +2569,32 @@ const server = createServer(async (req, res) => {
         return;
       }
 
+      const audioHash = hashAudioBuffer(audioFile.content);
+      const cached = getCachedTranscribeResponse(audioHash);
+      if (cached) {
+        console.log(
+          `[transcribe] cache hit in ${Date.now() - startedAt}ms bytes=${audioFile.content.length} outputChars=${cached.formattedText.length}`
+        );
+        json(res, 200, cached);
+        return;
+      }
+
       console.log(`[transcribe] request start model=${OPENAI_TRANSCRIBE_MODEL} bytes=${audioFile.content.length}`);
       const transcript = await transcribeAudioWithOpenAI({
         audio: audioFile.content,
         filename: audioFile.filename || 'voice-note.m4a',
         mimeType: audioFile.mimeType || 'audio/mp4',
       });
-      const formatted = await formatWithOpenAI(transcript);
+      const formatted = formatTranscriptDeterministic(transcript);
+      const payload = {
+        ...formatted,
+        transcript,
+      };
+      setCachedTranscribeResponse(audioHash, payload);
       console.log(
         `[transcribe] request ok in ${Date.now() - startedAt}ms transcriptChars=${transcript.length} outputChars=${formatted.formattedText.length}`
       );
-      json(res, 200, {
-        ...formatted,
-        transcript,
-      });
+      json(res, 200, payload);
       return;
     }
 
