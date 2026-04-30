@@ -2458,6 +2458,136 @@ function enforceDeterministicLayerRules(lines: string[]) {
   });
 }
 
+type DepthOverride = {
+  grain?: string;
+  hardness?: string;
+  size?: string;
+  red?: boolean;
+};
+
+function collectDepthOverridesFromRawNotes(rawNotes?: string) {
+  const overrides = new Map<number, DepthOverride>();
+  if (!rawNotes?.trim()) {
+    return overrides;
+  }
+
+  const clauses = splitCueClauses(rawNotes);
+  let lastBottom: number | null = null;
+  let lastIndex = -9999;
+  for (let i = 0; i < clauses.length; i += 1) {
+    const clause = clauses[i];
+    const toMatches = Array.from(clause.matchAll(/\bto\s+(\d+(?:\.\d+)?)\s*(?:centimet(?:er|re)s?|cm)?\b/gi));
+    const nearest = toMatches[toMatches.length - 1];
+    const bottom = nearest?.[1] ? Number(nearest[1]) : NaN;
+    if (Number.isFinite(bottom)) {
+      lastBottom = bottom;
+      lastIndex = i;
+    }
+    const targetBottom = Number.isFinite(bottom)
+      ? bottom
+      : lastBottom !== null && i - lastIndex <= 3
+        ? lastBottom
+        : NaN;
+    if (!Number.isFinite(targetBottom)) {
+      continue;
+    }
+
+    const current = overrides.get(targetBottom) ?? {};
+    const lower = clause.toLowerCase();
+    if (/\bfacets?\b/.test(lower) && looksLikeSurfaceHoarCue(clause)) {
+      current.grain = 'FC/SH';
+    } else if (/\bfacets?\b/.test(lower) && !current.grain) {
+      current.grain = 'FC';
+    } else if (/\brounds?\b/.test(lower) && !current.grain) {
+      current.grain = 'RG';
+    } else if (/\brain crust\b/.test(lower) || /\bifrc\b/.test(lower)) {
+      current.grain = 'IFrc';
+      current.hardness = 'K';
+    }
+
+    if (/\bfour\s+finger\b|\b4\s+finger\b/.test(lower)) {
+      current.hardness = '4F';
+    } else if (/\bone\s+finger\s+plus\b|\b1\s+finger\s+plus\b/.test(lower)) {
+      current.hardness = '1F+';
+    } else if (/\bfist\s+plus\b/.test(lower)) {
+      current.hardness = 'F+';
+    } else if (/\bfist\b/.test(lower)) {
+      current.hardness = 'F';
+    } else if (/\bpencil\b/.test(lower)) {
+      current.hardness = 'P';
+    } else if (/\bknife\b/.test(lower)) {
+      current.hardness = 'K';
+    }
+
+    const sizeMatch = clause.match(/\b(\d+(?:\.\d+)?)\s*(?:mm|millimeters?)\b/i);
+    if (sizeMatch?.[1]) {
+      const found = `${sizeMatch[1]}mm`;
+      if (current.size && current.size !== found && !current.size.includes('/')) {
+        current.size = `${current.size}/${found}`;
+      } else if (!current.size) {
+        current.size = found;
+      }
+    }
+    if (/\bred\b|\blayer of concern\b|\bmake this layer red\b|\bmark this layer red\b/i.test(lower)) {
+      current.red = true;
+    }
+
+    overrides.set(targetBottom, current);
+  }
+
+  return overrides;
+}
+
+function applyDepthOverrides(lines: string[], rawNotes?: string) {
+  const overrides = collectDepthOverridesFromRawNotes(rawNotes);
+  if (overrides.size === 0) {
+    return lines;
+  }
+
+  return lines.map((line) => {
+    const [mainPart, ...commentParts] = line.split('|');
+    const main = mainPart.trim();
+    const range = parseLeadingLayerRange(main);
+    if (!range) {
+      return line;
+    }
+    const override = overrides.get(range.bottom);
+    if (!override) {
+      return line;
+    }
+
+    const parts = main.split(/\s+/);
+    if (parts.length < 3) {
+      return line;
+    }
+
+    const rangeToken = parts[0];
+    let grain = parts[1];
+    let hardness = parts[2];
+    const existingSize = parts.find((token, idx) => idx > 2 && isSizeToken(token)) ?? '';
+    const hasRed = parts.some((token) => /^red$/i.test(token));
+    const red = override.red ?? hasRed;
+
+    if (override.grain) grain = override.grain;
+    if (override.hardness) hardness = override.hardness;
+    const size = override.size || existingSize;
+
+    const isCrust = /^(IFrc|MFcr)$/i.test(grain);
+    const rebuilt = [
+      rangeToken,
+      grain,
+      isCrust ? 'K' : hardness,
+      isCrust ? 'crust' : '',
+      !isCrust ? size : '',
+      red ? 'red' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return commentParts.length > 0 ? `${rebuilt} | ${commentParts.join('|').trim()}` : rebuilt;
+  });
+}
+
 const LAYER_GRAIN_TOKEN = /^(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF)(?:\/(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF))?$/;
 
 type ValidatedLayerLine = {
@@ -2592,7 +2722,7 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
   );
   const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
   const layersWithCleanComments = enforceDeterministicLayerRules(
-    canonicalizeLayerSchema(sanitizeLayerComments(layersWithSizeHints))
+    applyDepthOverrides(canonicalizeLayerSchema(sanitizeLayerComments(layersWithSizeHints)), rawNotes)
   );
   validateLayerBlockOrThrow(layersWithCleanComments);
   const stability = canonicalSections.stability
