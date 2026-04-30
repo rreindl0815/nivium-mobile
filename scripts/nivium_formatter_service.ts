@@ -850,11 +850,15 @@ function cleanupStabilityFalsePositives(lines: string[], rawNotes?: string) {
   const hasCt = normalized.some((line) => /^CT(?:E|M|H)\d+\b/i.test(line));
   const hasPst = normalized.some((line) => /^PST\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?\s+(?:END|ARR|SF)\s+at\s+\d+(?:\.\d+)?\s*cm\b/i.test(line));
   const rawMentionsPst = /\bpropagation\s+saw\s+test\b|\bPST\b/i.test(rawNotes ?? '');
+  const rawMentionsEct = /\bextended\s+column\s+test\b|\bECT[PNX]?\b/i.test(rawNotes ?? '');
+  const rawMentionsCt = /\bcompression\s+test\b|\bCT\b/i.test(rawNotes ?? '');
 
   const filtered = normalized.filter((line) => {
     const compact = line.trim();
     if (!compact) return false;
     if (/^ECT[PNX]?\d*$/i.test(compact)) return false;
+    if (!rawMentionsEct && /^ECT[PNX]?\d*\b/i.test(compact)) return false;
+    if (rawMentionsCt && !rawMentionsEct && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
     if (hasCt && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
     if ((hasPst || rawMentionsPst) && /^ECTP\d+\s+at\s+\d+(?:\.\d+)?\s*cm$/i.test(compact)) return false;
     return true;
@@ -1330,6 +1334,15 @@ function normalizeLayerAliases(line: string) {
 }
 
 function sanitizeAiLayerLines(lines: string[]) {
+  const orderedLines = [...lines].sort((a, b) => {
+    const ra = parseLeadingLayerRange(a);
+    const rb = parseLeadingLayerRange(b);
+    if (!ra && !rb) return 0;
+    if (!ra) return 1;
+    if (!rb) return -1;
+    if (ra.bottom !== rb.bottom) return ra.bottom - rb.bottom;
+    return ra.top - rb.top;
+  });
   const sanitized: string[] = [];
   const seenRanges = new Set<string>();
   const byBottom = new Map<number, { line: string; top: number; score: number }>();
@@ -1345,7 +1358,7 @@ function sanitizeAiLayerLines(lines: string[]) {
     return score;
   };
 
-  for (const rawLine of lines) {
+  for (const rawLine of orderedLines) {
     const line = normalizeLayerAliases(fixInvalidSingleTokenHardness(rawLine.trim()));
     const range = parseLeadingLayerRange(line);
     if (!range) {
