@@ -2196,6 +2196,141 @@ function sanitizeLayerComments(lines: string[]) {
   });
 }
 
+function canonicalizeLayerSchema(lines: string[]) {
+  type Parsed = {
+    top: number;
+    bottom: number;
+    grain: string;
+    hardness: string;
+    size: string;
+    crust: boolean;
+    red: boolean;
+    comment: string;
+  };
+
+  const grainFromToken = (token: string) => {
+    const clean = normalizeLayerGrainPiece(token);
+    return /^(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF)$/.test(clean) ? clean : '';
+  };
+
+  const parseOne = (line: string): Parsed | null => {
+    const [mainPart, ...commentParts] = line.split('|');
+    const main = mainPart.trim();
+    const range = parseLeadingLayerRange(main);
+    if (!range) return null;
+
+    const raw = main
+      .replace(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)(?:\s+|$)/, '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    let hardness = '';
+    const grains: string[] = [];
+    let size = '';
+    let crust = false;
+    let red = false;
+
+    for (let i = 0; i < raw.length; i += 1) {
+      const token = raw[i];
+      const norm = token.trim();
+      if (!norm) continue;
+      if (/^red$/i.test(norm)) {
+        red = true;
+        continue;
+      }
+      if (/^crust$/i.test(norm)) {
+        crust = true;
+        continue;
+      }
+      if (!hardness && isLayerHardnessToken(norm)) {
+        hardness = norm.toUpperCase();
+        continue;
+      }
+      if (!size && isSizeToken(norm)) {
+        size = norm.toLowerCase().replace(/\s+/g, '');
+        continue;
+      }
+      if (norm.includes('/')) {
+        const parts = norm
+          .split('/')
+          .map((piece) => grainFromToken(piece))
+          .filter(Boolean);
+        if (parts.length > 0) {
+          grains.push(...parts);
+          continue;
+        }
+      }
+      const grain = grainFromToken(norm);
+      if (grain) {
+        grains.push(grain);
+      }
+    }
+
+    if (!hardness) hardness = '1F';
+    const dedupedGrains = grains.filter((g, idx) => grains.indexOf(g) === idx);
+    let grain = dedupedGrains.slice(0, 2).join('/');
+    if (!grain) grain = 'RG';
+    if (!grain.includes('/') && dedupedGrains.length >= 2) {
+      grain = `${dedupedGrains[0]}/${dedupedGrains[1]}`;
+    }
+    if (grain.includes('/')) {
+      const [g1, g2] = grain.split('/');
+      if (g1 && g2) {
+        grain = `${g1}/${g2}`;
+      }
+    }
+    if (/^(IFrc|MFcr)$/.test(grain)) {
+      crust = true;
+      hardness = hardness || 'K';
+    }
+
+    return {
+      top: range.top,
+      bottom: range.bottom,
+      grain,
+      hardness,
+      size,
+      crust,
+      red,
+      comment: commentParts.join('|').trim(),
+    };
+  };
+
+  const parsed = lines.map(parseOne).filter((value): value is Parsed => Boolean(value));
+  parsed.sort((a, b) => (a.top === b.top ? a.bottom - b.bottom : a.top - b.top));
+
+  const rebuilt: string[] = [];
+  let prevBottom: number | null = null;
+  for (const entry of parsed) {
+    let top = entry.top;
+    let bottom = entry.bottom;
+    if (prevBottom !== null) {
+      if (top < prevBottom) {
+        top = prevBottom;
+      }
+      if (top > prevBottom) {
+        top = prevBottom;
+      }
+    }
+    if (bottom <= top) continue;
+
+    const parts = [
+      `${top}-${bottom}`,
+      entry.grain,
+      entry.hardness,
+      entry.crust ? 'crust' : '',
+      entry.size,
+      entry.red ? 'red' : '',
+    ].filter(Boolean);
+    const main = parts.join(' ').replace(/\s+/g, ' ').trim();
+    rebuilt.push(entry.comment ? `${main} | ${entry.comment}` : main);
+    prevBottom = bottom;
+  }
+
+  return rebuilt;
+}
+
 const LAYER_GRAIN_TOKEN = /^(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF)(?:\/(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF))?$/;
 
 type ValidatedLayerLine = {
@@ -2329,7 +2464,7 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
     rawNotes
   );
   const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
-  const layersWithCleanComments = sanitizeLayerComments(layersWithSizeHints);
+  const layersWithCleanComments = canonicalizeLayerSchema(sanitizeLayerComments(layersWithSizeHints));
   validateLayerBlockOrThrow(layersWithCleanComments);
   const stability = canonicalSections.stability
     .filter((line) => !isMalformedPseudoStability(line))
