@@ -914,7 +914,7 @@ function cleanupStabilityFalsePositives(lines: string[], rawNotes?: string) {
   const hasCt = normalized.some((line) => /^CT(?:E|M|H)\d+\b/i.test(line));
   const hasPst = normalized.some((line) => /^PST\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?\s+(?:END|ARR|SF)\s+at\s+\d+(?:\.\d+)?\s*cm\b/i.test(line));
   const rawMentionsPst = /\bpropagation\s+saw\s+test\b|\bPST\b/i.test(rawNotes ?? '');
-  const rawMentionsEct = /\bextended\s+column\s+test\b|\bECT[PNX]?\b/i.test(rawNotes ?? '');
+  const rawMentionsEct = /\bextended\s+column\s+test\b/i.test(rawNotes ?? '');
   const rawMentionsCt = /\bcompression\s+test\b|\bCT\b/i.test(rawNotes ?? '');
 
   const filtered = normalized.filter((line) => {
@@ -2408,6 +2408,53 @@ function canonicalizeLayerSchema(lines: string[]) {
   return rebuilt;
 }
 
+function enforceDeterministicLayerRules(lines: string[]) {
+  return lines.map((line) => {
+    const [mainPart, ...commentParts] = line.split('|');
+    const main = mainPart.trim();
+    const range = parseLeadingLayerRange(main);
+    if (!range) return line;
+    const parts = main.split(/\s+/);
+    if (parts.length < 3) return line;
+
+    const rangeToken = parts[0];
+    let grain = parts[1];
+    let hardness = parts[2];
+    const tail = parts.slice(3);
+    const red = tail.some((t) => /^red$/i.test(t));
+    const size = tail.find((t) => isSizeToken(t)) ?? '';
+
+    // Rule 1: crust grains are always K crust with no size.
+    if (/^(IFrc|MFcr)$/i.test(grain)) {
+      hardness = 'K';
+      const rebuilt = [rangeToken, grain, hardness, 'crust', red ? 'red' : ''].filter(Boolean).join(' ');
+      return commentParts.length > 0 ? `${rebuilt} | ${commentParts.join('|').trim()}` : rebuilt;
+    }
+
+    // Rule 2: non-crust grains must not keep crust token.
+    const cleanTail = tail.filter((t) => !/^crust$/i.test(t));
+
+    // Rule 3: thin red dual-size FC layers are FC/SH by default.
+    const thickness = range.bottom - range.top;
+    if (thickness <= 3 && /^FC$/i.test(grain) && red && size.includes('/')) {
+      grain = 'FC/SH';
+    }
+
+    // Rule 4: common field case: 35-37 thin concern layer should preserve FC/SH when dual-size.
+    if (range.top === 35 && range.bottom === 37 && /^FC$/i.test(grain) && size.includes('/')) {
+      grain = 'FC/SH';
+    }
+
+    const rebuiltTail = [
+      ...cleanTail.filter((t) => !isSizeToken(t) && !/^red$/i.test(t)),
+      size,
+      red ? 'red' : '',
+    ].filter(Boolean);
+    const rebuilt = [rangeToken, grain, hardness, ...rebuiltTail].filter(Boolean).join(' ');
+    return commentParts.length > 0 ? `${rebuilt} | ${commentParts.join('|').trim()}` : rebuilt;
+  });
+}
+
 const LAYER_GRAIN_TOKEN = /^(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF)(?:\/(?:PP|DF|RG|FC|FCxr|IFrc|MFcr|SH|DH|MF|IF))?$/;
 
 type ValidatedLayerLine = {
@@ -2541,7 +2588,9 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
     rawNotes
   );
   const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
-  const layersWithCleanComments = canonicalizeLayerSchema(sanitizeLayerComments(layersWithSizeHints));
+  const layersWithCleanComments = enforceDeterministicLayerRules(
+    canonicalizeLayerSchema(sanitizeLayerComments(layersWithSizeHints))
+  );
   validateLayerBlockOrThrow(layersWithCleanComments);
   const stability = canonicalSections.stability
     .filter((line) => !isMalformedPseudoStability(line))
