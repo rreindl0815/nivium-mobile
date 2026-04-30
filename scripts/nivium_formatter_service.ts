@@ -2472,6 +2472,17 @@ async function transcribeAudioWithOpenAI(args: {
   const blob = new Blob([new Uint8Array(args.audio)], { type: args.mimeType || 'audio/mp4' });
   form.append('file', blob, args.filename || 'voice-note.m4a');
   form.append('model', OPENAI_TRANSCRIBE_MODEL);
+  form.append('temperature', '0');
+  form.append(
+    'prompt',
+    [
+      'Snow profile dictation domain.',
+      'Prefer exact terms: facets, rounds, surface hoar, depth hoar, decomposing fragments, rain crust, melt-freeze crust.',
+      'Keep numeric depths and sizes exact.',
+      'Keep stability test terms exact: compression test, propagation saw test, ECT, PST, END, ARR.',
+      'Do not paraphrase technical terms.',
+    ].join(' ')
+  );
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);

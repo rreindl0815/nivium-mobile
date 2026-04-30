@@ -624,7 +624,10 @@ function normalizeCrustComments(value: string) {
 }
 
 function detectLayerGrain(value: string) {
-  const text = normalizeSpacing(value.toLowerCase()).replace(/\bmdf\b/g, 'df').replace(/\bef\b/g, 'df');
+  const text = normalizeSpacing(value.toLowerCase())
+    .replace(/\bmdf\b/g, 'df')
+    .replace(/\bef\b/g, 'df')
+    .replace(/\b(?:surface|service)\s+(?:hoar|whore|horror|score|war|wear|wore|oar|ore|hour|horde|hoer)\b/g, 'surface hoar');
 
   if (/\b(rain crust|drizzle crust|ifrc)\b/.test(text)) {
     return 'IFrc';
@@ -634,10 +637,17 @@ function detectLayerGrain(value: string) {
   }
 
   const hasPP = /\b(pp|stellar crystals?|stellars?|stellers?)\b/.test(text);
-  const hasDF = /\b(df|decomposing fragments?|decomposing|fragments?)\b/.test(text);
+  const hasDF = /\b(df|ds|dfs|decomposing fragments?|decomposing|fragments?)\b/.test(text);
   const hasFC = /\b(fc|facets?)\b/.test(text);
   const hasRG = /\b(rg|rounds?)\b/.test(text);
+  const hasSH = /\b(sh|surface hoar)\b/.test(text);
 
+  if (hasFC && hasSH) {
+    return 'FC/SH';
+  }
+  if (hasRG && hasSH) {
+    return 'RG/SH';
+  }
   if (hasPP && hasFC && !hasRG) {
     return 'PP/FC';
   }
@@ -674,7 +684,7 @@ function detectLayerGrain(value: string) {
   if (/\b(mf|wet grains?)\b/.test(text)) {
     return 'MF';
   }
-  if (/\b(sh|surface hoar)\b/.test(text)) {
+  if (hasSH) {
     return 'SH';
   }
   if (/\b(dh|depth hoar)\b/.test(text)) {
@@ -818,7 +828,8 @@ function normalizeStabilityLine(value: string) {
     .replace(/\bnon-propagating\b/gi, 'ECTN')
     .replace(/\bno fracture\b/gi, 'ECTX')
     .replace(/\bend\b/gi, 'END')
-    .replace(/\barr\b/gi, 'ARR');
+    .replace(/\barr\b/gi, 'ARR')
+    .replace(/\bsouthern collapse\b/gi, 'SC');
 
   text = text.replace(/\bCT\s+(easy|moderate|hard)\s+(\d{1,2})/gi, (_, result: string, taps: string) => {
     const letter = result[0].toUpperCase();
@@ -840,6 +851,10 @@ function normalizeStabilityLine(value: string) {
   text = text.replace(/\bat\s+(\d+(?:\.\d+)?)\s*(?:cm|centimeters?)\s+(CT\w+\s+\w+)/i, '$2 at $1 cm');
   text = text.replace(/\b(SS\s+\w+)\s+at\s+(\d+(?:\.\d+)?)\s*cm\s+SC(?:\s+also)?/i, '$1 SC at $2 cm');
   text = text.replace(/^a\s+/i, '');
+  text = text
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s+over\s+(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(?!\s+(?:END|ARR)\b)/i, 'PST $1/$2 END')
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)\s+(END|ARR)\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 $3 at $4 cm');
 
   text = text
     .replace(/\bECT\s+ECTP\s*(\d{1,2})\s*([A-Z]{2,3})?\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, taps: string, fc: string, depth: string) =>
