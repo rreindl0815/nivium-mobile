@@ -24,10 +24,11 @@ function json(res: import('node:http').ServerResponse, status: number, payload: 
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY?.trim() ?? '';
 const OPENAI_MODEL = process.env.OPENAI_FORMATTER_MODEL?.trim() || 'gpt-4.1-mini';
-const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL?.trim() || 'gpt-4o-mini-transcribe';
+const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL?.trim() || 'gpt-4o-transcribe';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
 const FORMATTER_AUDIT_DIR = process.env.NIVIUM_FORMATTER_AUDIT_DIR?.trim() || '/tmp/nivium-formatter-audit';
 const TRANSCRIBE_CACHE_MAX = Number(process.env.NIVIUM_TRANSCRIBE_CACHE_MAX || 100);
+const TRANSCRIBE_BEST_OF = Math.max(1, Number(process.env.NIVIUM_TRANSCRIBE_BEST_OF || 3));
 const transcribeResponseCache = new Map<string, FormatterResponse & { transcript: string }>();
 
 const FORMATTER_SYSTEM_PROMPT = `You are Nivium's snow-profile formatter.
@@ -785,6 +786,69 @@ function formatTranscriptDeterministic(transcript: string): FormatterResponse {
     warnings: localFormatted.warnings ?? [],
     resolvedValues,
   };
+}
+
+function looksLikeSurfaceHoarCue(text: string) {
+  return /\b(?:surface|service)\s+(?:hoar|whore|horror|score|war|wear|wore|oar|ore|hour|horde|hoer)\b/i.test(text);
+}
+
+function scoreTranscriptCandidate(transcript: string, formattedText: string) {
+  let score = 0;
+  const sections = extractSectionLines(formattedText);
+  const layers = sections.layers;
+  const stability = sections.stability.map((line) => line.trim());
+  const transcriptLower = transcript.toLowerCase();
+
+  // Prefer more well-formed layers.
+  for (const layer of layers) {
+    try {
+      parseAndValidateLayerLine(layer);
+      score += 10;
+    } catch {
+      score -= 25;
+    }
+  }
+
+  if (/\b97-95\b/.test(formattedText)) score -= 80;
+  if (/\b95-96\s+IFrc\s+P\+?/i.test(formattedText)) score -= 40;
+  if (/\b96-97\s+FC\s+K\s+crust/i.test(formattedText)) score -= 35;
+  if (/\b35-37\s+FC(?:\s|$)/i.test(formattedText) && !/\b35-37\s+FC\/SH\b/i.test(formattedText)) score -= 25;
+  if (/\bPST\s+\d+\s+over\s+\d+/i.test(formattedText)) score -= 20;
+  if (/\bPST\s+\d+\/\d+\s+END\s+at\s+\d+\s*cm\b/i.test(formattedText)) score += 20;
+
+  const cueHasFacets = /\bfacets?\b/i.test(transcript);
+  const cueHasSurfaceHoar = looksLikeSurfaceHoarCue(transcript);
+  if (cueHasFacets && cueHasSurfaceHoar) {
+    if (/\bFC\/SH\b/i.test(formattedText)) {
+      score += 25;
+    } else {
+      score -= 35;
+    }
+  }
+
+  const mentionsCompression = /\bcompression test\b/i.test(transcriptLower);
+  const mentionsPst = /\bpropagation saw test\b|\bpst\b/i.test(transcriptLower);
+  const mentionsEct = /\bextended column test\b|\bect\b/i.test(transcriptLower);
+
+  if (mentionsCompression && !mentionsEct) {
+    if (stability.some((line) => /^ECT/i.test(line))) score -= 20;
+    if (stability.some((line) => /^CT/i.test(line))) score += 10;
+  }
+  if (mentionsPst) {
+    if (stability.some((line) => /^PST\b/i.test(line))) score += 10;
+  }
+
+  // Penalize duplicated or orphan stability lines.
+  const stableKeys = new Set<string>();
+  for (const line of stability) {
+    const key = line.toUpperCase();
+    if (stableKeys.has(key)) score -= 12;
+    stableKeys.add(key);
+    if (/^ECT[PNX]?\d*$/i.test(line)) score -= 15;
+    if (/^CTE\s+SEVEN/i.test(line)) score -= 10;
+  }
+
+  return score;
 }
 
 function hashAudioBuffer(input: Buffer) {
@@ -2738,20 +2802,39 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      console.log(`[transcribe] request start model=${OPENAI_TRANSCRIBE_MODEL} bytes=${audioFile.content.length}`);
-      const transcript = await transcribeAudioWithOpenAI({
-        audio: audioFile.content,
-        filename: audioFile.filename || 'voice-note.m4a',
-        mimeType: audioFile.mimeType || 'audio/mp4',
-      });
-      const formatted = formatTranscriptDeterministic(transcript);
-      const payload = {
-        ...formatted,
-        transcript,
-      };
+      console.log(
+        `[transcribe] request start model=${OPENAI_TRANSCRIBE_MODEL} attempts=${TRANSCRIBE_BEST_OF} bytes=${audioFile.content.length}`
+      );
+
+      let bestPayload: (FormatterResponse & { transcript: string }) | null = null;
+      let bestScore = Number.NEGATIVE_INFINITY;
+
+      for (let attempt = 1; attempt <= TRANSCRIBE_BEST_OF; attempt += 1) {
+        const transcript = await transcribeAudioWithOpenAI({
+          audio: audioFile.content,
+          filename: audioFile.filename || 'voice-note.m4a',
+          mimeType: audioFile.mimeType || 'audio/mp4',
+        });
+        const formatted = formatTranscriptDeterministic(transcript);
+        const candidate = {
+          ...formatted,
+          transcript,
+        };
+        const score = scoreTranscriptCandidate(transcript, candidate.formattedText);
+        if (score > bestScore || bestPayload === null) {
+          bestScore = score;
+          bestPayload = candidate;
+        }
+      }
+
+      if (!bestPayload) {
+        throw new Error('No transcription candidate produced a valid formatter payload.');
+      }
+
+      const payload = bestPayload;
       setCachedTranscribeResponse(audioHash, payload);
       console.log(
-        `[transcribe] request ok in ${Date.now() - startedAt}ms transcriptChars=${transcript.length} outputChars=${formatted.formattedText.length}`
+        `[transcribe] request ok in ${Date.now() - startedAt}ms score=${bestScore} transcriptChars=${payload.transcript.length} outputChars=${payload.formattedText.length}`
       );
       json(res, 200, payload);
       return;
