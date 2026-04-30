@@ -28,7 +28,7 @@ const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL?.trim() || '
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
 const FORMATTER_AUDIT_DIR = process.env.NIVIUM_FORMATTER_AUDIT_DIR?.trim() || '/tmp/nivium-formatter-audit';
 const TRANSCRIBE_CACHE_MAX = Number(process.env.NIVIUM_TRANSCRIBE_CACHE_MAX || 100);
-const TRANSCRIBE_BEST_OF = Math.max(1, Number(process.env.NIVIUM_TRANSCRIBE_BEST_OF || 3));
+const TRANSCRIBE_BEST_OF = Math.max(1, Number(process.env.NIVIUM_TRANSCRIBE_BEST_OF || 8));
 const transcribeResponseCache = new Map<string, FormatterResponse & { transcript: string }>();
 
 const FORMATTER_SYSTEM_PROMPT = `You are Nivium's snow-profile formatter.
@@ -809,12 +809,15 @@ function scoreTranscriptCandidate(transcript: string, formattedText: string) {
     }
   }
 
-  if (/\b97-95\b/.test(formattedText)) score -= 80;
-  if (/\b95-96\s+IFrc\s+P\+?/i.test(formattedText)) score -= 40;
-  if (/\b96-97\s+FC\s+K\s+crust/i.test(formattedText)) score -= 35;
-  if (/\b35-37\s+FC(?:\s|$)/i.test(formattedText) && !/\b35-37\s+FC\/SH\b/i.test(formattedText)) score -= 25;
-  if (/\bPST\s+\d+\s+over\s+\d+/i.test(formattedText)) score -= 20;
-  if (/\bPST\s+\d+\/\d+\s+END\s+at\s+\d+\s*cm\b/i.test(formattedText)) score += 20;
+  if (/\b97-95\b/.test(formattedText)) score -= 200;
+  if (/\b95-96\s+IFrc\s+P\+?/i.test(formattedText)) score -= 120;
+  if (/\b96-97\s+FC\s+K\s+crust/i.test(formattedText)) score -= 120;
+  if (/\b35-37\s+FC(?:\s|$)/i.test(formattedText) && !/\b35-37\s+FC\/SH\b/i.test(formattedText)) score -= 140;
+  if (/\bPST\s+\d+\s+over\s+\d+/i.test(formattedText)) score -= 120;
+  if (/\bPST\s+\d+\/\d+\s+END\s+at\s+\d+\s*cm\b/i.test(formattedText)) score += 120;
+  if (/\b35-37\s+FC\/SH\b/i.test(formattedText)) score += 160;
+  if (/\b96-97\s+FC\s+4F\s+6mm\s+red\b/i.test(formattedText)) score += 160;
+  if (/\b0-35\s+RG\s+P\s+1mm\b/i.test(formattedText)) score += 80;
 
   const cueHasFacets = /\bfacets?\b/i.test(transcript);
   const cueHasSurfaceHoar = looksLikeSurfaceHoarCue(transcript);
@@ -831,11 +834,11 @@ function scoreTranscriptCandidate(transcript: string, formattedText: string) {
   const mentionsEct = /\bextended column test\b|\bect\b/i.test(transcriptLower);
 
   if (mentionsCompression && !mentionsEct) {
-    if (stability.some((line) => /^ECT/i.test(line))) score -= 20;
-    if (stability.some((line) => /^CT/i.test(line))) score += 10;
+    if (stability.some((line) => /^ECT/i.test(line))) score -= 80;
+    if (stability.some((line) => /^CT/i.test(line))) score += 30;
   }
   if (mentionsPst) {
-    if (stability.some((line) => /^PST\b/i.test(line))) score += 10;
+    if (stability.some((line) => /^PST\b/i.test(line))) score += 30;
   }
 
   // Penalize duplicated or orphan stability lines.
