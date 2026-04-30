@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { formatDraftToEngineText, formatRawNotesToEngineText } from '../utils/formatter';
 import { extractDraftValuesFromRawNotes } from '../utils/raw-note-parser';
+import type { ProfileDraft } from '../types/profile';
 import type { FormatterRequest, FormatterResponse } from '../types/formatter-service';
 
 const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_FORMATTER_TIMEOUT_MS || 45000);
@@ -2241,7 +2242,22 @@ function isLayerValidationError(error: unknown) {
 function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Record<string, string>, rawNotes?: string) {
   const postProcessed = postProcessFormattedText(formattedText);
   const sections = extractSectionLines(postProcessed);
-  const metadataLines = sections.metadata.map((line) => {
+
+  // Deterministic anchor:
+  // when we have parsed resolvedValues from transcript/raw-notes, rebuild a canonical
+  // draft and prefer its layer/stability blocks over free-form AI text.
+  let canonicalSections = sections;
+  if (resolvedValues && Object.keys(resolvedValues).length > 0) {
+    const canonicalDraft: ProfileDraft = {
+      rawNotes: rawNotes ?? '',
+      values: resolvedValues,
+      updatedAt: new Date().toISOString(),
+    };
+    const canonicalFormatted = formatDraftToEngineText(canonicalDraft).formattedText;
+    canonicalSections = extractSectionLines(canonicalFormatted);
+  }
+
+  const metadataLines = canonicalSections.metadata.map((line) => {
     if (!/^Total Hs:/i.test(line)) {
       return line;
     }
@@ -2254,7 +2270,7 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
   const layers = applyImplicitConcernCue(
     applyResolvedRedHints(
       applyRawNotesTransitionHints(
-        applyResolvedLayerTransitionHints(sanitizeAiLayerLines(sections.layers), resolvedValues),
+        applyResolvedLayerTransitionHints(sanitizeAiLayerLines(canonicalSections.layers), resolvedValues),
         rawNotes
       ),
       resolvedValues
@@ -2268,19 +2284,19 @@ function sanitizeAiOnlyFormattedText(formattedText: string, resolvedValues?: Rec
   const layersWithSizeHints = applyLayerSizeHints(layersWithInlineCues, rawNotes);
   const layersWithCleanComments = sanitizeLayerComments(layersWithSizeHints);
   validateLayerBlockOrThrow(layersWithCleanComments);
-  const stability = sections.stability
+  const stability = canonicalSections.stability
     .filter((line) => !isMalformedPseudoStability(line))
     .filter((line) => isCompleteStabilityLine(line));
   const normalizedStability = cleanupStabilityFalsePositives(
     applyPstOutcomeHints(stability.map((line) => normalizeStabilityFormatting(line)), rawNotes),
     rawNotes
   );
-  const notes = sanitizeNotes(sections.notes);
+  const notes = sanitizeNotes(canonicalSections.notes);
 
   return [
     metadataLines.join('\n'),
     layersWithCleanComments.join('\n'),
-    sections.temperatures.join('\n'),
+    canonicalSections.temperatures.join('\n'),
     normalizedStability.join('\n'),
     notes.join('\n'),
   ]

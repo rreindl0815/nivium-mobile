@@ -1,0 +1,22 @@
+[
+  {
+    "name": "nivium-test-core-profile",
+    "expectedStatus": 200,
+    "mustContain": [
+      "0-35 RG",
+      "35-37 FC/SH",
+      "35-37",
+      "red",
+      "96-97 FC 4F 6mm red",
+      "PST 45/100 END at 97 cm"
+    ],
+    "mustNotContain": [
+      "ECTP45/100",
+      "97-95",
+      " PP/DS ",
+      " PP/DFS ",
+      "IFrc P crust",
+      "IFrc P+"
+    ]
+  }
+]
