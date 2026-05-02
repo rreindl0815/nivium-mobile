@@ -41,3 +41,21 @@ app-example
 # generated native folders
 /ios
 /android
+
+# local project artifacts
+backups/
+website/
+Screenshots and other App files/
+Store screeshots/
+Test Profile *.rtf
+Nivium-android-*.aab
+
+# renderer lab outputs and scratch space
+nivium-renderer-lab/__pycache__/
+nivium-renderer-lab/*.pdf
+nivium-renderer-lab/*.png
+nivium-renderer-lab/*.svg
+nivium-renderer-lab/*.txt
+nivium-renderer-lab/*.md
+nivium-renderer-lab/*LOCKED_99.py
+nivium-renderer-lab/nivium_render_service.py

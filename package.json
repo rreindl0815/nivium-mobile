@@ -11,7 +11,8 @@
     "lint": "expo lint",
     "check:service": "python3 ./scripts/check-formatter-service.py --runs 3 --strict-identical",
     "check:audio": "python3 ./scripts/check-transcribe-audio.py --audio /Users/robertreindl/Desktop/nivium-test.m4a --runs 5 --strict-identical",
-    "check:audio:api": "python3 ./scripts/check-transcribe-audio.py --audio /Users/robertreindl/Desktop/nivium-test.m4a --endpoint https://api.nivium.ca/transcribe-format --runs 5 --strict-identical"
+    "check:audio:api": "python3 ./scripts/check-transcribe-audio.py --audio /Users/robertreindl/Desktop/nivium-test.m4a --endpoint https://api.nivium.ca/transcribe-format --runs 5 --strict-identical",
+    "check:med": "node ./scripts/check-med-roundtrip.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

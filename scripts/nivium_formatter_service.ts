@@ -891,6 +891,9 @@ function isCompleteStabilityLine(line: string) {
 function normalizeStabilityFormatting(line: string) {
   return line
     .trim()
+    .replace(/\bECT[HMX]?\s*(\d{1,2})\s+ECTP\b(?:\s+at\s+(\d+(?:\.\d+)?)\s*cm)?/i, (_, taps: string, depth: string) =>
+      `ECTP${taps}${depth ? ` at ${depth} cm` : ''}`
+    )
     .replace(/\bIn\s+a\s+PST\s+(\d+(?:\.\d+)?)\s*(?:\/|over)\s*(\d+(?:\.\d+)?)\s+and\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 END at $3 cm')
     .replace(/\bPST\s+(\d+(?:\.\d+)?)\s+over\s+(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
     .replace(/\bECTP\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')

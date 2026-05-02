@@ -1,10 +1,12 @@
 import { memo, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
 import { useProfileDraft } from '@/context/profile-draft-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
+import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
 const metadataLines = [
   'Date __________',
   'Time __________',
@@ -14,7 +16,6 @@ const metadataLines = [
   'Elevation _____ m',
   'Aspect __________',
   'Slope Angle _____ degrees',
-  'Lat / Long __________',
   'Air Temperature _____ C',
   'Sky __________ (clr, few, sct, bkn, ovc)',
   'Precip _____ (nil, S-1, S1, S2, S3, R, mixed)',
@@ -24,24 +25,34 @@ const metadataLines = [
   'Surface Grain __________',
   'Foot Pen _____ cm',
   'Ski Pen _____ cm',
+  'Lat / Long __________',
 ];
 
 const layerLines = [
-  'Top of layer _____ cm',
-  'Bottom of layer _____ cm',
-  'Hardness 1 _____',
-  'Hardness 2 _____ (optional)',
-  'Grain Form 1 _____',
-  'Grain Form 2 _____ (optional)',
-  'Grain Size 1 _____',
-  'Grain Size 2 _____ (optional)',
-  'Comments ____________________',
-  'Layer of concern / red? Yes or no',
-  'Repeat for every layer.',
+  'Start from the top down:',
+  '',
+  'First layer from __0__ cm to ____ cm',
+  'Hardness ______',
+  '(F, F+, 4F, 4F+, 1F, 1F+, P, P+, K, K+, I)',
+  '',
+  'Hardness 2 __________________ (optional)',
+  'Grain Form ___________________ (optional)',
+  'Grain Form 2 _________________ (optional)',
+  'Grain Size ___________________ (optional)',
+  'Grain Size 2 _________________ (optional)',
+  'Layer Comments ______________ (optional)',
+  'Make this layer red. (optional)',
+  '',
+  'Next layer down to __________ cm',
+  'Hardness ______',
+  '(F, F+, 4F, 4F+, 1F, 1F+, P, P+, K, K+, I)',
+  '',
+  'Repeat for every layer below.',
 ];
 
 const temperatureLines = [
-  '0 cm ______',
+  'Speak one line at a time, surface downward:',
+  'surface ______',
   '10 cm ______',
   '20 cm ______',
   '30 cm ______',
@@ -51,21 +62,29 @@ const temperatureLines = [
 ];
 
 const stabilityBlocks = [
+  ['Speak one full test line at a time.'],
+  ['Example: ECTP14 at 41 cm'],
+  ['Example: PST 40/100 ARR at 46 cm'],
   ['Compression Test', 'Taps _____', 'Result _____ (easy, moderate, hard)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Shovel Shear Test', 'Result _____ (easy, moderate, hard)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Hand Shear Test', 'Result _____ (easy, moderate, hard)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Ext. Col. Test', 'Result _____ (ECTN, ECTP, ECTX)', 'Taps _____', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
   ['Propagation Saw Test', 'Cut Length _____', 'Column Length _____', 'Result _____ (End, Arr, SF)', 'Depth _____ cm'],
   ['Rutschblock Test', 'Result _____ (RB1-RB7)', 'Fracture Character _____ (SC, SP, PC, RP, BRK)', 'Depth _____ cm'],
-  ['Extra Notes', '____________________'],
 ];
+
+const extraNotesLines = ['____________________'];
 
 export default function RecordNotesScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
-  const { draft, setRawNotes } = useProfileDraft();
+  const { draft, setRawNotes, setRawNotesFromVoiceInput, finalizeVoiceNotesFormatting } = useProfileDraft();
   const { createProfileFromDraft } = useSavedProfiles();
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const compact = true;
 
   useEffect(() => {
@@ -77,6 +96,118 @@ export default function RecordNotesScreen() {
   if (!isPaid) {
     return null;
   }
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone Permission Needed', 'Allow microphone access to record voice notes.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+
+      const nextRecording = new Audio.Recording();
+      await nextRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await nextRecording.startAsync();
+      setRecording(nextRecording);
+      setIsRecording(true);
+      setIsPaused(false);
+    } catch {
+      Alert.alert('Record Audio', 'Unable to start recording.');
+    }
+  };
+
+  const pauseRecording = async () => {
+    if (!recording) {
+      return;
+    }
+    try {
+      await recording.pauseAsync();
+      setIsPaused(true);
+      setIsRecording(false);
+    } catch {
+      Alert.alert('Pause Recording', 'Unable to pause recording.');
+    }
+  };
+
+  const resumeRecording = async () => {
+    if (!recording) {
+      return;
+    }
+    try {
+      await recording.startAsync();
+      setIsPaused(false);
+      setIsRecording(true);
+    } catch {
+      Alert.alert('Resume Recording', 'Unable to resume recording.');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) {
+      return;
+    }
+
+    try {
+      setIsProcessingAudio(true);
+      await recording.stopAndUnloadAsync();
+      const audioUri = recording.getURI();
+      setRecording(null);
+      setIsRecording(false);
+      setIsPaused(false);
+
+      if (!audioUri) {
+        throw new Error('No audio URI was generated.');
+      }
+
+      const response = await transcribeAudioFromServiceAsync({
+        audioUri,
+        source: 'raw-notes-audio',
+        formatterVersion: 'nivium-ai-v1',
+      });
+      const nextNotes = response.formattedText?.trim() || response.transcript?.trim() || '';
+      setRawNotesFromVoiceInput(nextNotes);
+      finalizeVoiceNotesFormatting();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Transcription failed.';
+      Alert.alert('Transcription Failed', message);
+    } finally {
+      setIsProcessingAudio(false);
+    }
+  };
+
+  const onRecordPress = () => {
+    if (isProcessingAudio) {
+      return;
+    }
+    if (!recording) {
+      void startRecording();
+      return;
+    }
+    if (isRecording) {
+      void pauseRecording();
+      return;
+    }
+    if (isPaused) {
+      void resumeRecording();
+    }
+  };
+
+  const recordButtonLabel = isProcessingAudio
+    ? 'Processing recording...'
+    : recording
+      ? isRecording
+        ? 'Pause Recording'
+        : 'Resume Recording'
+      : 'Record Audio';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -94,17 +225,59 @@ export default function RecordNotesScreen() {
           <View style={styles.cardHighlight} />
           <View style={styles.card}>
             <View style={styles.cardAccent} />
-            <Text style={styles.cardEyebrow}>Capture</Text>
-            <Text style={styles.cardTitle}>Voice Notes</Text>
-            <TextInput
-              multiline
-              value={draft.rawNotes}
-              onChangeText={setRawNotes}
-              placeholder="🎙 Activate your phone mic and speak your voice notes by reading aloud through the field card below."
-              placeholderTextColor="#546878"
-              style={[styles.input, compact ? styles.inputFocused : null]}
-              textAlignVertical="top"
-            />
+            <View style={styles.captureHeaderRow}>
+              <View>
+                <Text style={styles.cardEyebrow}>Capture</Text>
+                <Text style={styles.cardTitle}>Voice Notes</Text>
+              </View>
+              <Pressable
+                onPress={() => setRawNotes('')}
+                style={({ pressed }) => [styles.clearButton, pressed ? styles.pressed : null]}>
+                <Text style={styles.clearButtonText}>Clear Voice Notes</Text>
+              </Pressable>
+            </View>
+            <View style={styles.instructionsBox}>
+              <View style={styles.bulletRow}>
+                <Text style={styles.bulletGlyph}>•</Text>
+                <Text style={styles.instructionsLine}>Press <Text style={styles.instructionsBold}>Record Audio</Text></Text>
+              </View>
+              <View style={styles.bulletRow}>
+                <Text style={styles.bulletGlyph}>•</Text>
+                <Text style={styles.instructionsLine}>Follow steps in the <Text style={styles.instructionsBold}>Fieldcard</Text>{'\n'}below</Text>
+              </View>
+              {draft.rawNotes.trim() ? (
+                <Text style={styles.liveNotesText}>{draft.rawNotes}</Text>
+              ) : null}
+            </View>
+            <Pressable
+              onPress={onRecordPress}
+              style={({ pressed }) => [styles.recordButtonShell, pressed ? styles.pressed : null]}>
+              <View style={styles.recordButtonFrame}>
+                <View style={styles.recordButton}>
+                  {isProcessingAudio ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color="#FFF8EE" />
+                      <Text style={styles.recordButtonText}>{recordButtonLabel}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.recordButtonText}>{recordButtonLabel}</Text>
+                  )}
+                </View>
+              </View>
+            </Pressable>
+            {recording ? (
+              <Pressable
+                onPress={() => {
+                  void stopRecording();
+                }}
+                style={({ pressed }) => [styles.stopButtonShell, pressed ? styles.pressed : null]}>
+                <View style={styles.stopButtonFrame}>
+                  <View style={styles.stopButton}>
+                    <Text style={styles.stopButtonText}>Stop Recording</Text>
+                  </View>
+                </View>
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
@@ -200,8 +373,13 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
 
           <View style={styles.guideSection}>
             <Text style={styles.guideSectionTitle}>Snowpack Layers</Text>
-            {layerLines.map((line) => (
-              <Text key={line} style={styles.fieldLine}>
+            {layerLines.map((line, index) => (
+              <Text
+                key={`layer-line-${index}`}
+                style={[
+                  styles.fieldLine,
+                  (index >= 2 && index <= 4) || (index >= 14 && index <= 18) ? styles.fieldLineEmphasis : null,
+                ]}>
                 {line}
               </Text>
             ))}
@@ -218,15 +396,29 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
 
           <View style={styles.guideSection}>
             <Text style={styles.guideSectionTitle}>Stability Test</Text>
-            {stabilityBlocks.map((block) => (
-              <View key={block[0]} style={styles.testBlock}>
-                <Text style={styles.testBlockTitle}>{block[0]}</Text>
-                {block.slice(1).map((line) => (
-                  <Text key={`${block[0]}-${line}`} style={styles.fieldLine}>
-                    {line}
-                  </Text>
-                ))}
-              </View>
+            {stabilityBlocks.map((block) =>
+              block.length === 1 ? (
+                <Text key={block[0]} style={styles.stabilitySampleLine}>
+                  {block[0]}
+                </Text>
+              ) : (
+                <View key={block[0]} style={styles.testBlock}>
+                  <Text style={styles.testBlockTitle}>{block[0]}</Text>
+                  {block.slice(1).map((line) => (
+                    <Text key={`${block[0]}-${line}`} style={styles.fieldLine}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              )
+            )}
+          </View>
+          <View style={styles.guideSection}>
+            <Text style={styles.guideSectionTitle}>Extra Notes</Text>
+            {extraNotesLines.map((line, index) => (
+              <Text key={`extra-notes-line-${index}`} style={styles.fieldLine}>
+                {line}
+              </Text>
             ))}
           </View>
         </ScrollView>
@@ -344,8 +536,126 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 23,
   },
+  captureHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  clearButton: {
+    borderRadius: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#97A8B7',
+    borderWidth: 1,
+    borderColor: '#4D667A',
+  },
+  clearButtonText: {
+    color: '#E7EEF4',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  instructionsBox: {
+    marginTop: 12,
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#D7E0E8',
+    borderWidth: 1,
+    borderColor: '#31495C',
+    gap: 8,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  bulletGlyph: {
+    color: '#1F3443',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  instructionsLine: {
+    color: '#1F3443',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  instructionsBold: {
+    fontWeight: '800',
+  },
+  liveNotesText: {
+    marginTop: 6,
+    color: '#20384D',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  recordButtonShell: {
+    marginTop: 12,
+    borderRadius: 8,
+    padding: 2,
+    backgroundColor: '#06080B',
+    alignSelf: 'flex-start',
+  },
+  recordButtonFrame: {
+    borderRadius: 6,
+    padding: 2,
+    backgroundColor: '#173248',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(255,255,255,0.22)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.14)',
+    borderRightWidth: 2,
+    borderRightColor: 'rgba(7,20,36,0.38)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(7,20,36,0.52)',
+  },
+  recordButton: {
+    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#3B627D',
+    alignItems: 'center',
+  },
+  recordButtonText: {
+    color: '#FFF8EE',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  stopButtonShell: {
+    marginTop: 10,
+    borderRadius: 8,
+    padding: 2,
+    backgroundColor: '#06080B',
+  },
+  stopButtonFrame: {
+    borderRadius: 6,
+    padding: 2,
+    backgroundColor: '#3A1B1B',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(255,255,255,0.22)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.14)',
+    borderRightWidth: 2,
+    borderRightColor: 'rgba(7,20,36,0.38)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(7,20,36,0.52)',
+  },
+  stopButton: {
+    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#9C3A3A',
+    alignItems: 'center',
+  },
+  stopButtonText: {
+    color: '#FFF8EE',
+    fontSize: 18,
+    fontWeight: '800',
+  },
   input: {
-    minHeight: 244,
+    minHeight: 180,
     marginTop: 14,
     borderRadius: 8,
     padding: 16,
@@ -357,7 +667,7 @@ const styles = StyleSheet.create({
     borderColor: '#31495C',
   },
   inputFocused: {
-    minHeight: 152,
+    minHeight: 110,
   },
   guideStack: {
     marginTop: 14,
@@ -394,6 +704,12 @@ const styles = StyleSheet.create({
     borderTopColor: '#7F95A6',
     gap: 4,
   },
+  stabilitySampleLine: {
+    color: '#20384D',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+  },
   testBlockTitle: {
     color: '#1F3443',
     fontSize: 15,
@@ -405,6 +721,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     fontWeight: '700',
+  },
+  fieldLineEmphasis: {
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
   },
   createShell: {
     borderRadius: 8,

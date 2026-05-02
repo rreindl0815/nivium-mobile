@@ -18,7 +18,7 @@ type AppAccessContextValue = {
 };
 
 const STORAGE_KEY = 'nivium-app-tier-v2';
-const DEFAULT_TIER: AppTier = 'free';
+const DEFAULT_TIER: AppTier = __DEV__ ? 'paid' : 'free';
 const REVENUECAT_IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY ?? '';
 const REVENUECAT_ANDROID_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY ?? '';
 const REVENUECAT_ENTITLEMENT_ID = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'pro';
@@ -53,8 +53,13 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) {
           return;
         }
+        if (__DEV__) {
+          setTierState('paid');
+          await AsyncStorage.setItem(STORAGE_KEY, 'paid');
+          return;
+        }
         if (stored === 'free' || stored === 'paid') {
-          const nextTier = __DEV__ ? stored : stored === 'paid' ? 'free' : stored;
+          const nextTier = stored === 'paid' ? 'free' : stored;
           setTierState(nextTier);
         }
       } catch {

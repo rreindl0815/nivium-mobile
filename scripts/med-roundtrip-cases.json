@@ -1,0 +1,10 @@
+[
+  {
+    "name": "fc-sh-dual-grain-red-pst-cte",
+    "formattedText": "Date: 2026-05-01\nRun Name: Test Run\nObserver: Nivium QA\nTotal Hs: 212 cm\n\n0-45 PP/DF F-F+ 1mm/2mm\n45-47 IF K\n47-49 FC F+ 6mm red\n49-74 IF K | old deteriorating rain crust\n74-127 FC/RG 1F+ 9mm/2mm\n127-154 RG P-P+\n154-156 SH 1F 10mm red\n156-212 RG P+\n\n-4 surface\n-6 20cm\n-8 40cm\n\nCTE11 SP at 47 cm\nPST 45/100 END at 97 cm\n\nNotes: deterministic roundtrip fixture"
+  },
+  {
+    "name": "ect-compact-and-rb",
+    "formattedText": "Date: 2026-05-01\nRun Name: Stability Mix\nObserver: Nivium QA\nTotal Hs: 96 cm\n\n0-35 RG P 1mm\n35-37 FC/SH F 6mm/14mm red\n37-67 FC/RG 1F-1F+ 4mm/1mm\n67-95 RG P-1F+\n95-96 IF K\n96-97 FC 4F 6mm red\n97-104 IF K | another crust\n104-156 RG P\n\nECTP24 at 155 cm\nRB3 at 96 cm\n\nNotes: compact test forms must survive MED roundtrip"
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "red-two-thin-layers",
+    "rawNotes": "First layer from 0 to 45 centimeters, fist hardness to fist plus hardness, grain form stellers, second grain form DF. Next layer to 47 centimeters, ice resistance, rain crust. Next layer to 49 centimeters, fist plus resistance, facets, 6 millimeters, red. Next layer to 74 centimeters, knife resistance, rain crust. Comment: old deteriorating rain crust. Next layer to 127 centimeters, one finger plus hardness, facets, second grain form rounds, first grain size 9 millimeters, second grain size 2 millimeters. Next layer to 154 centimeters, pencil to pencil plus resistance, rounds. Next layer to 156 centimeters, one finger resistance, surface hoar, 10 millimeters, layer of concern. Next layer to 212 centimeters, pencil plus resistance, rounds. And an ECTP, 24 taps at 155 centimeters.",
+    "mustContain": [
+      "47-49 FC",
+      "47-49 FC F+ 6mm red",
+      "154-156 SH 1F 10mm red"
+    ],
+    "mustNotContain": [
+      "74-127 FC/RG 1F+ 9mm/2mm red",
+      "PP/DS",
+      " PP/DFS "
+    ]
+  },
+  {
+    "name": "df-alias-ds-dfs",
+    "rawNotes": "First layer from 0 to 45 centimeters, fist hardness to fist plus hardness, grain form stellars, second grain form DFs. Next layer to 47 centimeters, ice resistance, rain crust. Next layer to 49 centimeters, fist plus resistance, facets, 6 millimeters, make this layer red. Next layer to 154 centimeters, pencil to pencil plus resistance, rounds. Next layer to 156 centimeters, one finger resistance, surface hoar, 10 millimeters, this is my layer of concern.",
+    "mustContain": [
+      "0-45 PP/DF",
+      "47-49 FC",
+      "154-156 SH"
+    ],
+    "mustNotContain": [
+      "PP/DS",
+      "PP/DFS"
+    ]
+  },
+  {
+    "name": "transition-hardness-first-second",
+    "rawNotes": "First layer from zero to one centimeter, knife hardness, a rain crust. Next layer down to 20 centimeters, one finger plus hardness, grain form facets, grain form two, rounds. Grain size 4 millimeters, grain size two, one millimeter. Next layer down to 45 centimeters, a melt freeze crust, knife hardness. Next layer down to 47 centimeters, fist hardness, surface hoar, grain size 10 millimeters. Next layer down to 65 centimeters, one finger plus, rounds. Next layer down to 110 centimeters, first hardness, one finger, second hardness, pencil. Grain form one, facets. Grain form two, DF. Grain size one, 8 millimeter. Grain size two, 4 millimeter. Next layer down to 111, one finger resistance, surface hoar, 16 millimeter in size. And next layer down to 165 centimeters, pencil hardness, rounds.",
+    "mustContain": [
+      "65-110 FC/DF",
+      "8mm/4mm"
+    ],
+    "mustNotContain": [
+      "65-111",
+      "1F/P",
+      "FC+/RG"
+    ]
+  },
+  {
+    "name": "voice-standalone-red-and-surface-war",
+    "rawNotes": "First layer from 0 to 45 centimeters. Fist hardness to fist plus hardness. Grain form stellars. Second grain form DF. Next layer to 47 centimeters. Ice resistance, rain crust. Next layer to 49 centimeters. Fist plus resistance. Facets, 6 millimeters. Red. Next layer to 74 centimeters. Knife resistance, rain crust. Comment: old deteriorating rain crust. Next layer to 127 centimeters. One finger plus hardness. Facets. Second grain form rounds. First grain size 9 millimeters. Second grain size 2 millimeters. Next layer to 154 centimeters. Pencil to pencil plus resistance. Rounds. Next layer to 156 centimeters. One finger resistance. Surface war 10 millimeters. Layer of concern. Next layer to 212 centimeters. Pencil plus resistance. Rounds.",
+    "mustContain": [
+      "47-49 FC F+ 6mm red",
+      "154-156 SH 1F 10mm red"
+    ],
+    "mustNotContain": [
+      "0-45 PP/DF F-F+ red",
+      "74-127 FC/RG 1F+ 9mm/2mm red"
+    ]
+  },
+  {
+    "name": "facets-should-not-drift-to-df",
+    "rawNotes": "First layer from 0 to 35 cm, pencil hardness, rounds, 1 mm, layer comment, brittle wind slab. Next layer to 37 cm, fist resistance, facets, second grain form, surface hoar. First grain size 6 mm, second grain size 14 mm, mark this layer red. Next layer to 67 cm, one finger to one finger plus resistance, facets, grain form 2, rounds, grain size 1, 4 mm, grain size 2, 1 mm. Next layer to 95 cm, pencil hardness, hardness 2, one finger plus, rounds. Next layer to 96 cm, knife hardness, rain crust. Next layer to 97 cm, four finger hardness, facets, 6 mm, make this layer red. Next layer to 104 cm, knife hardness, another crust. Next layer to 156 cm, pencil hardness, rounds. Stability test, compression test easy, 7 taps, southern collapse at 36 cm, and a propagation saw test, 45 over 100, end at 97 cm.",
+    "mustContain": [
+      "35-37 FC/SH F 6mm/14mm red",
+      "96-97 FC 4F 6mm red",
+      "PST 45/100 END at 97 cm"
+    ],
+    "mustNotContain": [
+      "35-37 SH/DF",
+      "96-97 DF",
+      "ECTP45/100"
+    ]
+  }
+]

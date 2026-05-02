@@ -446,12 +446,10 @@ export default function ArchiveScreen() {
                         onPress={() => {
                           void (async () => {
                             setSelectedProfileId(profile.id);
-                            const nextKind = await reopenProfileForEditing(profile.id);
-                            if (nextKind === 'manual') {
-                              router.push('/manual-entry');
-                            } else if (nextKind === 'raw-notes') {
-                              router.push('/record-notes');
-                            }
+                            await reopenProfileForEditing(profile.id);
+                            // Archive edits should always land in MED so users can
+                            // correct structured fields directly, regardless of source kind.
+                            router.push('/manual-entry');
                           })();
                         }}
                         style={styles.inlineAction}>

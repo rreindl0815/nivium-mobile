@@ -1,0 +1,45 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT": "https://api.nivium.ca/format",
+        "EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT": "https://render.nivium.ca/render"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT": "https://api.nivium.ca/format",
+        "EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT": "https://render.nivium.ca/render"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT": "https://api.nivium.ca/format",
+        "EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT": "https://render.nivium.ca/render"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal"
+      },
+      "ios": {
+        "ascAppId": "6761642749"
+      }
+    }
+  }
+}

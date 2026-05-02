@@ -295,8 +295,8 @@ export default function RenderedProfileScreen() {
                 <Text style={styles.debugLine}>Raw stability: {rawStabilitySnippet}</Text>
                 <Text style={styles.debugLine}>Tests: {parsedProfile?.stabilityTests.length ?? 0}</Text>
                 {parsedProfile?.stabilityTests.length ? (
-                  parsedProfile.stabilityTests.map((line) => (
-                    <Text key={line} style={styles.debugLine}>
+                  parsedProfile.stabilityTests.map((line, index) => (
+                    <Text key={`debug-stability-${index}`} style={styles.debugLine}>
                       {line}
                     </Text>
                   ))
