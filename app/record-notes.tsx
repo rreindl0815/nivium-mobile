@@ -4,8 +4,7 @@ import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
-import { useProfileDraft } from '@/context/profile-draft-context';
-import { useSavedProfiles } from '@/context/saved-profiles-context';
+import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
 const metadataLines = [
   'Date __________',
@@ -78,14 +77,14 @@ const extraNotesLines = ['____________________'];
 export default function RecordNotesScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
-  const { draft, setRawNotes, setRawNotesFromVoiceInput, finalizeVoiceNotesFormatting } = useProfileDraft();
-  const { createProfileFromDraft } = useSavedProfiles();
-  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const { session, clearSession, setFromFormatterResult } = useVoiceNoteSession();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const compact = true;
+  const hasReviewReady = session.engineTextCurrent.trim().length > 0;
+  const canOpenReview = !recording && !isProcessingAudio && hasReviewReady;
 
   useEffect(() => {
     if (!isPaid) {
@@ -173,9 +172,15 @@ export default function RecordNotesScreen() {
         source: 'raw-notes-audio',
         formatterVersion: 'nivium-ai-v1',
       });
-      const nextNotes = response.formattedText?.trim() || response.transcript?.trim() || '';
-      setRawNotesFromVoiceInput(nextNotes);
-      finalizeVoiceNotesFormatting();
+      setFromFormatterResult({
+        audioUri,
+        transcriptRaw: response.transcript,
+        engineText: response.formattedText,
+        resolvedValues: response.resolvedValues,
+        warnings: response.warnings,
+        formatterVersion: response.formatterVersion,
+      });
+      router.push('/voice-review');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Transcription failed.';
       Alert.alert('Transcription Failed', message);
@@ -185,6 +190,10 @@ export default function RecordNotesScreen() {
   };
 
   const onRecordPress = () => {
+    if (canOpenReview) {
+      router.push('/voice-review');
+      return;
+    }
     if (isProcessingAudio) {
       return;
     }
@@ -207,7 +216,9 @@ export default function RecordNotesScreen() {
       ? isRecording
         ? 'Pause Recording'
         : 'Resume Recording'
-      : 'Record Audio';
+      : canOpenReview
+        ? 'Review Profile'
+        : 'Record Audio';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -231,7 +242,9 @@ export default function RecordNotesScreen() {
                 <Text style={styles.cardTitle}>Voice Notes</Text>
               </View>
               <Pressable
-                onPress={() => setRawNotes('')}
+                onPress={() => {
+                  void clearSession();
+                }}
                 style={({ pressed }) => [styles.clearButton, pressed ? styles.pressed : null]}>
                 <Text style={styles.clearButtonText}>Clear Voice Notes</Text>
               </Pressable>
@@ -245,8 +258,10 @@ export default function RecordNotesScreen() {
                 <Text style={styles.bulletGlyph}>•</Text>
                 <Text style={styles.instructionsLine}>Follow steps in the <Text style={styles.instructionsBold}>Fieldcard</Text>{'\n'}below</Text>
               </View>
-              {draft.rawNotes.trim() ? (
-                <Text style={styles.liveNotesText}>{draft.rawNotes}</Text>
+              {session.engineTextCurrent.trim() ? (
+                <Text style={styles.liveNotesText}>{session.engineTextCurrent}</Text>
+              ) : session.transcriptRaw.trim() ? (
+                <Text style={styles.liveNotesText}>{session.transcriptRaw}</Text>
               ) : null}
             </View>
             <Pressable
@@ -283,52 +298,19 @@ export default function RecordNotesScreen() {
 
         <FieldcardGuidePanel compact={compact} />
 
-        <Pressable
-          onPress={() => {
-            void (async () => {
-              if (isCreatingProfile) {
-                return;
-              }
-              setIsCreatingProfile(true);
-              try {
-                const created = await createProfileFromDraft('raw-notes');
-                if (created) {
-                  if (created.renderError) {
-                    router.push({
-                      pathname: '/raw-notes-pending',
-                      params: { profileId: created.id },
-                    });
-                    return;
-                  }
-                  router.push({
-                    pathname: created.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview',
-                    params: { profileId: created.id },
-                  });
-                }
-              } finally {
-                setIsCreatingProfile(false);
-              }
-            })();
-          }}
-          style={({ pressed }) => [
-            styles.createShell,
-            pressed && draft.rawNotes.trim() && !isCreatingProfile ? styles.pressed : null,
-          ]}
-          disabled={!draft.rawNotes.trim() || isCreatingProfile}>
-          <View style={styles.createHighlight} />
-          <View style={styles.createButtonFrame}>
-            <View style={styles.createButton}>
-              {isCreatingProfile ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color="#F4EFE6" />
-                  <Text style={styles.createButtonText}>Rendering Profile...</Text>
-                </View>
-              ) : (
-                <Text style={styles.createButtonText}>Create Profile</Text>
-              )}
+        {hasReviewReady ? (
+          <Pressable
+            onPress={() => {
+              router.push('/voice-review');
+            }}
+            style={({ pressed }) => [styles.recordButtonShell, pressed ? styles.pressed : null]}>
+            <View style={styles.recordButtonFrame}>
+              <View style={styles.recordButton}>
+                <Text style={styles.recordButtonText}>Review Profile</Text>
+              </View>
             </View>
-          </View>
-        </Pressable>
+          </Pressable>
+        ) : null}
 
         <Pressable onPress={() => router.push('/')} style={({ pressed }) => [styles.homeShell, pressed ? styles.pressed : null]}>
           <View style={styles.homeHighlight} />

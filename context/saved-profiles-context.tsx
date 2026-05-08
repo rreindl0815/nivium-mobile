@@ -3,13 +3,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 import { useProfileDraft } from '@/context/profile-draft-context';
+import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { formatDraftToEngineText } from '@/utils/formatter';
 import { formatRawNotesFromServiceAsync, isFormatterServiceConfigured } from '@/utils/formatter-service';
 import { isPlotRenderServiceConfigured } from '@/utils/plot-render-service';
 import { getMetadataValue, parseFormattedProfile } from '@/utils/profile-document';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 import { createRenderedProfileDocumentAsync, PlotRenderError } from '@/utils/profile-renderer';
-import type { SavedProfile } from '@/types/profile';
+import type { SavedProfile, VoiceNoteSession } from '@/types/profile';
 
 const STORAGE_KEY = 'skeena-saved-profiles';
 
@@ -17,7 +18,11 @@ type SavedProfilesContextValue = {
   profiles: SavedProfile[];
   selectedProfileId: string | null;
   isLoaded: boolean;
-  createProfileFromDraft: (sourceKind?: 'manual' | 'raw-notes') => Promise<SavedProfile | null>;
+  createProfileFromDraft: (
+    sourceKind?: 'manual' | 'raw-notes',
+    editingProfileId?: string | null
+  ) => Promise<SavedProfile | null>;
+  createProfileFromVoiceSession: (session: VoiceNoteSession) => Promise<SavedProfile | null>;
   ensureProfilePdf: (profileId: string) => Promise<{ uri: string | null; error?: string }>;
   reopenProfileForEditing: (profileId: string) => Promise<'manual' | 'raw-notes' | null>;
   deleteProfile: (profileId: string) => Promise<void>;
@@ -386,7 +391,7 @@ function parseStabilityLine(line: string) {
   } else if (type === 'PST') {
     const pst = normalized.match(/\b(End|Arr|SF)\b/i)?.[1];
     if (pst) {
-      test.result = pst[0].toUpperCase() + pst.slice(1).toLowerCase();
+      test.result = pst.toUpperCase();
     }
     const column = normalized.match(/\b(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\b/);
     if (column) {
@@ -556,6 +561,18 @@ function buildProfileSubtitle(values: Record<string, string>) {
   return `${date} · ${observer}`;
 }
 
+function buildProfileDisplayFromFormattedText(formattedText: string) {
+  const parsed = formattedText.trim() ? parseFormattedProfile(formattedText) : null;
+  const runName = parsed ? getMetadataValue(parsed, 'Run Name').trim() : '';
+  const date = parsed ? getMetadataValue(parsed, 'Date').trim() : '';
+  const observer = parsed ? getMetadataValue(parsed, 'Observer').trim() : '';
+
+  return {
+    title: runName || 'Untitled Run',
+    subtitle: `${date || 'Date missing'} · ${observer || 'Observer missing'}`,
+  };
+}
+
 function buildProfileDisplayMetadata(profile: SavedProfile) {
   const sourceValues = profile.sourceValues ?? {};
   const parsed = profile.formattedText ? parseFormattedProfile(profile.formattedText) : null;
@@ -571,14 +588,29 @@ function buildProfileDisplayMetadata(profile: SavedProfile) {
 
 function normalizeSavedProfile(profile: SavedProfile): SavedProfile {
   const display = buildProfileDisplayMetadata(profile);
-  if (profile.title === display.title && profile.subtitle === display.subtitle) {
-    return profile;
-  }
-  return {
+  const nextProfile: SavedProfile = {
     ...profile,
     title: display.title,
     subtitle: display.subtitle,
+    transcriptRaw: profile.transcriptRaw ?? profile.rawNotes ?? '',
+    engineTextOriginal:
+      profile.engineTextOriginal ??
+      ((profile.sourceKind ?? (profile.rawNotes.trim() ? 'raw-notes' : 'manual')) === 'raw-notes'
+        ? profile.formattedText
+        : undefined),
+    formatterWarnings: profile.formatterWarnings ?? [],
   };
+
+  if (
+    profile.title === nextProfile.title &&
+    profile.subtitle === nextProfile.subtitle &&
+    profile.transcriptRaw === nextProfile.transcriptRaw &&
+    profile.engineTextOriginal === nextProfile.engineTextOriginal &&
+    profile.formatterWarnings === nextProfile.formatterWarnings
+  ) {
+    return profile;
+  }
+  return nextProfile;
 }
 
 function buildResolvedDraftValues(rawNotes: string, values: Record<string, string>) {
@@ -664,10 +696,22 @@ async function buildRawNotesFormatterOutput(rawNotes: string, sourceValues: Reco
 
 async function buildProfileForRender(profile: SavedProfile) {
   if (profile.sourceKind === 'raw-notes') {
+    if (hasStructuredManualValues(profile.sourceValues ?? {})) {
+      return rebuildFormattedText(profile);
+    }
+
     const persistedFormatted = profile.formattedText?.trim() ?? '';
     if (persistedFormatted) {
       return {
         formattedText: persistedFormatted,
+        resolvedValues: profile.sourceValues ?? {},
+      };
+    }
+
+    const originalFormatted = profile.engineTextOriginal?.trim() ?? '';
+    if (originalFormatted) {
+      return {
+        formattedText: originalFormatted,
         resolvedValues: profile.sourceValues ?? {},
       };
     }
@@ -681,6 +725,7 @@ async function buildProfileForRender(profile: SavedProfile) {
 
 export function SavedProfilesProvider({ children }: { children: React.ReactNode }) {
   const { draft, loadFreshDraft } = useProfileDraft();
+  const { loadFromSavedProfile } = useVoiceNoteSession();
   const [profiles, setProfiles] = useState<SavedProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -761,8 +806,13 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
     }
   };
 
-  const createProfileFromDraft = async (sourceKind?: 'manual' | 'raw-notes') => {
+  const createProfileFromDraft = async (
+    sourceKind?: 'manual' | 'raw-notes',
+    editingProfileId?: string | null
+  ) => {
+    const editingProfile = editingProfileId ? profiles.find((entry) => entry.id === editingProfileId) ?? null : null;
     const effectiveSourceKind = sourceKind ?? (draft.rawNotes.trim() ? 'raw-notes' : 'manual');
+    const persistedSourceKind = editingProfile?.sourceKind ?? effectiveSourceKind;
     const resolvedValues = resolveValuesForSourceKind(draft.rawNotes, draft.values, effectiveSourceKind);
     const sanitizedValues =
       effectiveSourceKind === 'manual' ? sanitizeManualValues(resolvedValues) : resolvedValues;
@@ -798,14 +848,20 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
 
     const createdAt = new Date().toISOString();
     const newProfile: SavedProfile = {
-      id: `${Date.now()}`,
+      id: editingProfile?.id ?? `${Date.now()}`,
       title: buildProfileTitle(formatterResolvedValues),
       subtitle: buildProfileSubtitle(formatterResolvedValues),
-      createdAt,
+      createdAt: editingProfile?.createdAt ?? createdAt,
       formattedText,
-      rawNotes: draft.rawNotes,
+      rawNotes: editingProfile?.rawNotes ?? draft.rawNotes,
+      transcriptRaw: editingProfile?.transcriptRaw ?? editingProfile?.rawNotes ?? draft.rawNotes,
       sourceValues: formatterResolvedValues,
-      sourceKind: effectiveSourceKind,
+      sourceKind: persistedSourceKind,
+      engineTextOriginal:
+        editingProfile?.engineTextOriginal ??
+        (persistedSourceKind === 'raw-notes' ? editingProfile?.formattedText ?? formattedText : undefined),
+      formatterWarnings: editingProfile?.formatterWarnings ?? [],
+      audioUri: editingProfile?.audioUri,
     };
 
     if (!formattedText.trim()) {
@@ -817,29 +873,24 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
             ? 'Formatter could not produce engine-ready text from these raw notes.'
             : 'Formatter could not produce engine-ready text.'),
       };
-      const nextProfiles = [storedProfile, ...profiles];
+      const nextProfiles = editingProfile
+        ? profiles.map((entry) => (entry.id === editingProfile.id ? storedProfile : entry))
+        : [storedProfile, ...profiles];
       await persist(nextProfiles);
-      setSelectedProfileId(newProfile.id);
+      if (storedProfile.sourceKind === 'raw-notes') {
+        loadFromSavedProfile(storedProfile);
+      }
+      setSelectedProfileId(storedProfile.id);
       return storedProfile;
     }
 
     let storedProfile: SavedProfile;
     try {
-      const profileForRender =
-        effectiveSourceKind === 'raw-notes'
-          ? {
-              ...newProfile,
-              formattedText,
-              sourceValues: formatterResolvedValues,
-            }
-          : (() => {
-              const rebuilt = rebuildFormattedText(newProfile);
-              return {
-                ...newProfile,
-                formattedText: rebuilt.formattedText,
-                sourceValues: rebuilt.resolvedValues,
-              };
-            })();
+      const profileForRender = {
+        ...newProfile,
+        formattedText,
+        sourceValues: formatterResolvedValues,
+      };
       const pdf = await createRenderedProfileDocumentAsync(profileForRender);
       storedProfile = {
         ...profileForRender,
@@ -858,9 +909,88 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
       };
     }
 
-    const nextProfiles = [storedProfile, ...profiles];
+    const nextProfiles = editingProfile
+      ? profiles.map((entry) => (entry.id === editingProfile.id ? storedProfile : entry))
+      : [storedProfile, ...profiles];
     await persist(nextProfiles);
-    setSelectedProfileId(newProfile.id);
+    if (storedProfile.sourceKind === 'raw-notes') {
+      loadFromSavedProfile(storedProfile);
+    }
+    setSelectedProfileId(storedProfile.id);
+    return storedProfile;
+  };
+
+  const createProfileFromVoiceSession = async (session: VoiceNoteSession) => {
+    const editingProfile = session.profileId ? profiles.find((entry) => entry.id === session.profileId) ?? null : null;
+    const reviewValues = sanitizeManualValues(session.reviewValues ?? {});
+    const rebuilt = formatDraftToEngineText({
+      rawNotes: session.transcriptRaw,
+      values: reviewValues,
+      updatedAt: new Date().toISOString(),
+    });
+    const formattedText = rebuilt.formattedText.trim();
+    const display = buildProfileDisplayFromFormattedText(formattedText);
+    const createdAt = new Date().toISOString();
+    const formatterWarnings = Array.from(new Set([...(session.serviceWarnings ?? []), ...(rebuilt.warnings ?? [])]));
+    const baseProfile: SavedProfile = {
+      id: editingProfile?.id ?? `${Date.now()}`,
+      title: display.title,
+      subtitle: display.subtitle,
+      createdAt: editingProfile?.createdAt ?? createdAt,
+      formattedText,
+      rawNotes: session.transcriptRaw,
+      transcriptRaw: session.transcriptRaw,
+      sourceValues: reviewValues,
+      sourceKind: 'raw-notes',
+      engineTextOriginal: editingProfile?.engineTextOriginal ?? (session.engineTextOriginal.trim() || formattedText),
+      formatterWarnings,
+      audioUri: session.audioUri,
+    };
+    const newProfile: SavedProfile = {
+      ...baseProfile,
+      sourceValues: reviewValues,
+    };
+
+    if (!formattedText) {
+      const storedProfile: SavedProfile = {
+        ...newProfile,
+        renderError: 'No engine-ready text is available for render.',
+      };
+      const nextProfiles = editingProfile
+        ? profiles.map((entry) => (entry.id === editingProfile.id ? storedProfile : entry))
+        : [storedProfile, ...profiles];
+      await persist(nextProfiles);
+      setSelectedProfileId(storedProfile.id);
+      loadFromSavedProfile(storedProfile);
+      return storedProfile;
+    }
+
+    let storedProfile: SavedProfile;
+    try {
+      const pdf = await createRenderedProfileDocumentAsync(newProfile);
+      storedProfile = {
+        ...newProfile,
+        pdfUri: pdf.uri,
+        previewImageUri: pdf.previewImageUri,
+        documentKind: pdf.documentKind,
+        renderError: undefined,
+      };
+    } catch (error) {
+      if (!(error instanceof PlotRenderError)) {
+        throw error;
+      }
+      storedProfile = {
+        ...newProfile,
+        renderError: error.message || 'Unknown renderer error.',
+      };
+    }
+
+    const nextProfiles = editingProfile
+      ? profiles.map((entry) => (entry.id === editingProfile.id ? storedProfile : entry))
+      : [storedProfile, ...profiles];
+    await persist(nextProfiles);
+    loadFromSavedProfile(storedProfile);
+    setSelectedProfileId(storedProfile.id);
     return storedProfile;
   };
 
@@ -870,8 +1000,14 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
       return null;
     }
 
-    const nextValues = hydrateManualValuesForEdit(profile);
     const nextKind = profile.sourceKind ?? (profile.rawNotes.trim() ? 'raw-notes' : 'manual');
+    if (nextKind === 'raw-notes') {
+      loadFromSavedProfile(profile);
+      setSelectedProfileId(profile.id);
+      return nextKind;
+    }
+
+    const nextValues = hydrateManualValuesForEdit(profile);
     // MED edits should be driven by structured values only, not by legacy raw dictation text.
     // Keeping raw notes here can re-introduce parser noise when saving after edits.
     loadFreshDraft({
@@ -933,6 +1069,7 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         selectedProfileId,
         isLoaded,
         createProfileFromDraft,
+        createProfileFromVoiceSession,
         ensureProfilePdf,
         reopenProfileForEditing,
         deleteProfile,

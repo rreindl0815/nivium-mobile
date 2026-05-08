@@ -6,6 +6,7 @@ import 'react-native-reanimated';
 import { AppAccessProvider } from '@/context/app-access-context';
 import { ProfileDraftProvider } from '@/context/profile-draft-context';
 import { SavedProfilesProvider } from '@/context/saved-profiles-context';
+import { VoiceNoteSessionProvider } from '@/context/voice-note-session-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -19,13 +20,15 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AppAccessProvider>
         <ProfileDraftProvider>
-          <SavedProfilesProvider>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-            </Stack>
-            <StatusBar style="auto" />
-          </SavedProfilesProvider>
+          <VoiceNoteSessionProvider>
+            <SavedProfilesProvider>
+              <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+              </Stack>
+              <StatusBar style="auto" />
+            </SavedProfilesProvider>
+          </VoiceNoteSessionProvider>
         </ProfileDraftProvider>
       </AppAccessProvider>
     </ThemeProvider>

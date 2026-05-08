@@ -84,6 +84,28 @@ function runChecks() {
   assert.match(spokenResult.formattedText, /-1 40cm/);
   assert.match(spokenResult.formattedText, /CTH 28 RP at 51 cm|CTH28 RP at 51 cm/);
 
+  const structuredOrderDraft = makeDraft({
+    layer_count: '2',
+    layer_1_top: '0',
+    layer_1_bottom: '45',
+    layer_1_hardness_1: '4F+',
+    layer_1_hardness_2: '4F',
+    layer_1_grain_1: 'DF',
+    layer_1_grain_2: 'PP',
+    layer_1_size_1: '7',
+    layer_1_size_2: '4',
+    layer_2_bottom: '109',
+    layer_2_hardness_1: '4F',
+    layer_2_grain_1: 'SH',
+    layer_2_grain_2: 'FC',
+    layer_2_size_1: '10',
+    layer_2_size_2: '4',
+    layer_2_concern: 'yes',
+  });
+  const structuredOrderResult = formatDraftToEngineText(structuredOrderDraft).formattedText;
+  assert.match(structuredOrderResult, /0-45 DF\/PP 4F\+-4F 7mm\/4mm/);
+  assert.match(structuredOrderResult, /45-109 SH\/FC 4F 10mm\/4mm red/);
+
   const witchesChair = extractDraftValuesFromRawNotes(
     `Date: February 3rd, 2026 at 12:30 Run name: Witches Chair Observer: Robert Organization: Skeena Elevation: 1,150 m Aspect: Northeast Slope Angle: 0° Air Temperature: -1° Sky: OVC Precip: S-1 Wind: Calm Total Hs: 345 Surface Crain: Stellers Foot Pen: 45 Ski Pen: 30 cm Layer 1: from 0 to 18 cm, DF, 4 finger resistance From 18 to 35 cm, rounds, 1 mm, 4 finger plus resistance From 35 to 40 cm, facets Fist resistance. This layer in red. From 310 correction, from 40 to 50 centimeters. Rain crust, knife plus resistance. The layer of concern, I already said that, is from 35 to 40 centimeters. Stability test, shear test easy at 36 centimeters. Also add a comment into this layer, please, that says, woomph at valley bottom. Woomph is spelled W-O-O-M-P-F.`
   );

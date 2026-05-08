@@ -52,6 +52,14 @@ const structuredLayerIndexes = Array.from({ length: 12 }, (_, index) => index + 
 const structuredTemperatureIndexes = Array.from({ length: 20 }, (_, index) => index + 1);
 const structuredStabilityIndexes = Array.from({ length: 12 }, (_, index) => index + 1);
 
+function getStructuredLimit(rawValue: string | undefined, max: number) {
+  const count = Number(rawValue ?? '');
+  if (!Number.isFinite(count) || count <= 0) {
+    return max;
+  }
+  return Math.min(Math.max(Math.trunc(count), 1), max);
+}
+
 export function formatDraftToEngineText(draft: ProfileDraft): FormatResult {
   const warnings: string[] = [];
   const concernRange = normalizeConcernRange(draft.values.layer_of_concern ?? '');
@@ -130,8 +138,9 @@ function resolveLayerSourceLines(draft: ProfileDraft) {
 function buildStructuredLayerLines(values: ProfileDraft['values']) {
   const results: string[] = [];
   let previousBottom = '';
+  const limit = getStructuredLimit(values.layer_count, structuredLayerIndexes.length);
 
-  for (const index of structuredLayerIndexes) {
+  for (const index of structuredLayerIndexes.slice(0, limit)) {
     const topField = values[`layer_${index}_top`]?.trim() ?? '';
     const bottomField = values[`layer_${index}_bottom`]?.trim() ?? '';
     const hardness1 = values[`layer_${index}_hardness_1`]?.trim() ?? '';
@@ -251,14 +260,6 @@ function normalizeLayerLine(
   };
 }
 
-function normalizeMultilineBlock(value: string) {
-  return value
-    .split('\n')
-    .map((line) => normalizeSpacing(line))
-    .filter(Boolean)
-    .join('\n');
-}
-
 function normalizeNotesBlock(value: string) {
   return value
     .split('\n')
@@ -294,8 +295,9 @@ function resolveTemperatureBlock(values: ProfileDraft['values']) {
 
 function buildStructuredTemperatureBlock(values: ProfileDraft['values']) {
   const lines: string[] = [];
+  const limit = getStructuredLimit(values.temp_count, structuredTemperatureIndexes.length);
 
-  for (const index of structuredTemperatureIndexes) {
+  for (const index of structuredTemperatureIndexes.slice(0, limit)) {
     const depth = (values[`temp_${index}_depth`] ?? '').trim();
     const temperature = (values[`temp_${index}_value`] ?? '').trim();
 
@@ -341,8 +343,9 @@ function resolveStabilityBlock(values: ProfileDraft['values']) {
 
 function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
   const lines: string[] = [];
+  const limit = getStructuredLimit(values.test_count, structuredStabilityIndexes.length);
 
-  for (const index of structuredStabilityIndexes) {
+  for (const index of structuredStabilityIndexes.slice(0, limit)) {
     const type = (values[`test_${index}_type`] ?? '').trim();
     const result = (values[`test_${index}_result`] ?? '').trim();
     const taps = (values[`test_${index}_taps`] ?? '').trim();
@@ -380,7 +383,7 @@ function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
       if (!pstCut || !pstColumn || !depth) {
         continue;
       }
-      lines.push([`PST ${pstCut}/${pstColumn} ${result}`.trim(), `at ${depth} cm`].filter(Boolean).join(' '));
+      lines.push([`PST ${pstCut}/${pstColumn} ${result.toUpperCase()}`.trim(), `at ${depth} cm`].filter(Boolean).join(' '));
       continue;
     }
 
@@ -636,6 +639,11 @@ function detectLayerGrain(value: string) {
     return 'MFcr';
   }
 
+  const explicitDual = text.match(/\b(pp|df|rg|fc|sh|dh|mf|ifrc|mfcr)\s*\/\s*(pp|df|rg|fc|sh|dh|mf|ifrc|mfcr)\b/);
+  if (explicitDual) {
+    return `${normalizeDetectedGrainCode(explicitDual[1])}/${normalizeDetectedGrainCode(explicitDual[2])}`;
+  }
+
   const hasPP = /\b(pp|stellar crystals?|stellars?|stellers?)\b/.test(text);
   const hasDF = /\b(df|ds|dfs|decomposing fragments?|decomposing|fragments?)\b/.test(text);
   const hasFC = /\b(fc|facets?)\b/.test(text);
@@ -692,6 +700,17 @@ function detectLayerGrain(value: string) {
   }
 
   return '';
+}
+
+function normalizeDetectedGrainCode(value: string) {
+  const upper = value.toUpperCase();
+  if (upper === 'IFRC') {
+    return 'IFrc';
+  }
+  if (upper === 'MFCR') {
+    return 'MFcr';
+  }
+  return upper;
 }
 
 function detectLayerHardness(value: string) {
@@ -853,8 +872,8 @@ function normalizeStabilityLine(value: string) {
   text = text.replace(/^a\s+/i, '');
   text = text
     .replace(/\bPST\s+(\d+(?:\.\d+)?)\s+over\s+(\d+(?:\.\d+)?)(?=\b|$)/i, 'PST $1/$2')
-    .replace(/\bPST\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(?!\s+(?:END|ARR)\b)/i, 'PST $1/$2 END')
-    .replace(/\bPST\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)\s+(END|ARR)\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 $3 at $4 cm');
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(?!\d)(?!\s+(?:END|ARR|SF)\b)/i, 'PST $1/$2 END')
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)\s+(END|ARR|SF)\s+at\s+(\d+(?:\.\d+)?)\s*cm\b/i, 'PST $1/$2 $3 at $4 cm');
 
   text = text
     .replace(/\bECT\s+ECTP\s*(\d{1,2})\s*([A-Z]{2,3})?\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, taps: string, fc: string, depth: string) =>
@@ -867,10 +886,10 @@ function normalizeStabilityLine(value: string) {
       [`ECTN${taps}`, fc, `at ${depth} cm`].filter(Boolean).join(' ')
     )
     .replace(/\bECTX\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, depth: string) => `ECTX at ${depth} cm`)
-    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s*cut on a\s*(\d+(?:\.\d+)?)\s*centimeter column\s*(END|ARR)\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, cut: string, total: string, result: string, depth: string) =>
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s*cut on a\s*(\d+(?:\.\d+)?)\s*centimeter column\s*(END|ARR|SF)\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, cut: string, total: string, result: string, depth: string) =>
       `PST ${cut}/${total} ${result} at ${depth} cm`
     )
-    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*(END|ARR)\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, cut: string, total: string, result: string, depth: string) =>
+    .replace(/\bPST\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*(END|ARR|SF)\s*at\s*(\d+(?:\.\d+)?)\s*cm\b/i, (_, cut: string, total: string, result: string, depth: string) =>
       `PST ${cut}/${total} ${result} at ${depth} cm`
     );
 

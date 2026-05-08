@@ -111,9 +111,10 @@ async function persistSampleVault(entries: SampleLibraryEntry[]) {
 
 export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' }) {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; editProfileId?: string }>();
   const entryMode = mode ?? (params.mode === 'manual' ? 'manual' : 'record');
   const isManualMode = entryMode === 'manual';
+  const routeEditProfileId = Array.isArray(params.editProfileId) ? params.editProfileId[0] : params.editProfileId;
   const [openSectionId, setOpenSectionId] = useState<string | null>(isManualMode ? null : 'metadata');
   const [sampleLibrary, setSampleLibrary] = useState<SampleLibraryEntry[]>([]);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
@@ -363,6 +364,9 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                         onPress: () => {
                           setSaveMessage('');
                           void resetDraft();
+                          if (routeEditProfileId) {
+                            router.replace('/manual-entry');
+                          }
                         },
                       },
                     ]);
@@ -379,7 +383,10 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                       }
                       setIsCreatingProfile(true);
                       try {
-                        const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
+                        const created = await createProfileFromDraft(
+                          isManualMode ? 'manual' : 'raw-notes',
+                          isManualMode ? routeEditProfileId : undefined
+                        );
                         if (created) {
                           if (created.renderError) {
                             setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
@@ -441,6 +448,9 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                     rawNotes: sample?.rawNotes ?? demoRawNotes,
                     values: sample?.values ?? demoManualEntryValues,
                   });
+                  if (routeEditProfileId) {
+                    router.replace('/manual-entry');
+                  }
                 }}
                 style={({ pressed }) => [styles.manualQuickPrimaryShell, styles.actionWide, pressed ? styles.pressed : null]}>
                 <View style={styles.manualQuickPrimaryHighlight} />
@@ -643,7 +653,10 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                   }
                   setIsCreatingProfile(true);
                   try {
-                    const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
+                    const created = await createProfileFromDraft(
+                      isManualMode ? 'manual' : 'raw-notes',
+                      isManualMode ? routeEditProfileId : undefined
+                    );
                     if (created) {
                       if (created.renderError) {
                         setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
@@ -691,7 +704,10 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                   }
                   setIsCreatingProfile(true);
                   try {
-                    const created = await createProfileFromDraft(isManualMode ? 'manual' : 'raw-notes');
+                    const created = await createProfileFromDraft(
+                      isManualMode ? 'manual' : 'raw-notes',
+                      isManualMode ? routeEditProfileId : undefined
+                    );
                     if (created) {
                       if (created.renderError) {
                         setSaveMessage(`${created.title} was saved to Archive, but the plotted renderer failed.`);
@@ -1208,6 +1224,60 @@ const styles = StyleSheet.create({
     gap: 10,
     flexWrap: 'wrap',
   },
+  insertLayerPanel: {
+    borderRadius: 8,
+    padding: 14,
+    backgroundColor: '#B5C6D2',
+    borderWidth: 1,
+    borderColor: '#31495C',
+    gap: 12,
+  },
+  insertLayerPanelTitle: {
+    color: '#173248',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  insertLayerPanelHint: {
+    color: '#30516A',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  insertLayerPanelError: {
+    color: '#7B1824',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  layerInlineActionRow: {
+    marginBottom: 14,
+    flexDirection: 'row',
+  },
+  insertLayerButton: {
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: '#A94C2A',
+    alignItems: 'center',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(255,255,255,0.22)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.14)',
+    borderRightWidth: 2,
+    borderRightColor: 'rgba(7,20,36,0.26)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(7,20,36,0.42)',
+    shadowColor: '#091827',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  insertLayerButtonText: {
+    color: '#FFF8EE',
+    fontSize: 14,
+    fontWeight: '800',
+  },
   temperatureBuilder: {
     gap: 14,
   },
@@ -1389,6 +1459,31 @@ const styles = StyleSheet.create({
   },
   removeLayerButtonText: {
     color: '#173248',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  deleteLayerButton: {
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#C62821',
+    alignItems: 'center',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(255,255,255,0.16)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.1)',
+    borderRightWidth: 2,
+    borderRightColor: 'rgba(7,20,36,0.26)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(7,20,36,0.42)',
+    shadowColor: '#091827',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  deleteLayerButtonText: {
+    color: '#FFF7F6',
     fontSize: 15,
     fontWeight: '800',
   },
@@ -1697,6 +1792,18 @@ const monthOptions = [
 const dayOptions = Array.from({ length: 31 }, (_, index) => `${index + 1}`);
 const yearOptions = ['2025', '2026', '2027'];
 const layerIndexes = Array.from({ length: 12 }, (_, index) => index + 1);
+const layerFieldSuffixes = [
+  'top',
+  'bottom',
+  'hardness_1',
+  'hardness_2',
+  'grain_1',
+  'grain_2',
+  'size_1',
+  'size_2',
+  'comment',
+  'concern',
+] as const;
 const temperatureIndexes = Array.from({ length: 20 }, (_, index) => index + 1);
 const stabilityTestIndexes = Array.from({ length: 12 }, (_, index) => index + 1);
 
@@ -1777,16 +1884,15 @@ function LayerBuilder({
   onLayerLayout: (index: number, offsetY: number) => void;
   onFocusLayer: (index: number) => void;
 }) {
-  const activeCount = getVisibleLayerCardCount(values);
+  const [openLayerIndex, setOpenLayerIndex] = useState(0);
+  const resolvedActiveCount = getVisibleLayerCardCount(values);
+  const activeCount = Math.max(resolvedActiveCount, openLayerIndex || 0);
   const canAddLayer = activeCount < layerIndexes.length;
   const canRemoveLayer = activeCount > 1;
-  const [openLayerIndex, setOpenLayerIndex] = useState(activeCount);
-
-  useEffect(() => {
-    if (openLayerIndex > activeCount) {
-      setOpenLayerIndex(activeCount);
-    }
-  }, [activeCount, openLayerIndex]);
+  const [showInsertPanel, setShowInsertPanel] = useState(false);
+  const [insertTop, setInsertTop] = useState('');
+  const [insertBottom, setInsertBottom] = useState('');
+  const [insertError, setInsertError] = useState('');
 
   return (
     <View
@@ -1976,15 +2082,15 @@ function LayerBuilder({
                 <Text style={styles.subFieldLabel}>Layer Of Concern</Text>
                 <View style={styles.toggleRow}>
                   <Pressable
-                    onPress={() => onChange(`layer_${index}_concern`, 'no')}
+                    onPress={() => onChange(`layer_${index}_concern`, '')}
                     style={[
                       styles.toggleChip,
-                      (values[`layer_${index}_concern`] ?? 'no') === 'no' ? styles.toggleChipSelected : null,
+                      (values[`layer_${index}_concern`] ?? '') !== 'yes' ? styles.toggleChipSelected : null,
                     ]}>
                     <Text
                       style={[
                         styles.toggleChipText,
-                        (values[`layer_${index}_concern`] ?? 'no') === 'no' ? styles.toggleChipTextSelected : null,
+                        (values[`layer_${index}_concern`] ?? '') !== 'yes' ? styles.toggleChipTextSelected : null,
                       ]}>
                       No
                     </Text>
@@ -1994,19 +2100,36 @@ function LayerBuilder({
                     style={[
                       styles.toggleChip,
                       styles.toggleChipDanger,
-                      (values[`layer_${index}_concern`] ?? 'no') === 'yes' ? styles.toggleChipSelectedDanger : null,
+                      (values[`layer_${index}_concern`] ?? '') === 'yes' ? styles.toggleChipSelectedDanger : null,
                     ]}>
                     <Text
                       style={[
                         styles.toggleChipText,
                         styles.toggleChipDangerTextIdle,
-                        (values[`layer_${index}_concern`] ?? 'no') === 'yes' ? styles.toggleChipDangerText : null,
+                        (values[`layer_${index}_concern`] ?? '') === 'yes' ? styles.toggleChipDangerText : null,
                       ]}>
                       Yes, mark red
                     </Text>
                   </Pressable>
                 </View>
               </View>
+            </View>
+            <View style={styles.layerActionRow}>
+              <Pressable
+                onPress={() => {
+                  if (!canRemoveLayer) {
+                    return;
+                  }
+                  const nextValues = buildValuesWithRemovedLayerAtIndex(values, index);
+                  replaceLayerValues(nextValues, onChange);
+                  const nextOpenIndex = Math.min(index, activeCount - 1);
+                  setOpenLayerIndex(nextOpenIndex);
+                  onFocusLayer(nextOpenIndex);
+                }}
+                style={[styles.deleteLayerButton, !canRemoveLayer ? styles.buttonDisabled : null]}
+                disabled={!canRemoveLayer}>
+                <Text style={styles.deleteLayerButtonText}>Delete Layer</Text>
+              </Pressable>
             </View>
               </>
             ) : null}
@@ -2020,7 +2143,23 @@ function LayerBuilder({
             if (!canAddLayer) {
               return;
             }
+            setShowInsertPanel((current) => !current);
+            setInsertError('');
+          }}
+          style={[styles.insertLayerButton, !canAddLayer ? styles.buttonDisabled : null]}
+          disabled={!canAddLayer}>
+          <Text style={styles.insertLayerButtonText}>Insert Layer</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            if (!canAddLayer) {
+              return;
+            }
             onChange('layer_count', `${activeCount + 1}`);
+            setShowInsertPanel(false);
+            setInsertTop('');
+            setInsertBottom('');
+            setInsertError('');
             setOpenLayerIndex(activeCount + 1);
             onFocusLayer(activeCount + 1);
           }}
@@ -2028,21 +2167,81 @@ function LayerBuilder({
           disabled={!canAddLayer}>
           <Text style={styles.addLayerButtonText}>Add Layer</Text>
         </Pressable>
-        <Pressable
-          onPress={() => {
-            if (!canRemoveLayer) {
-              return;
-            }
-            clearLayerCard(activeCount, onChange);
-            onChange('layer_count', `${Math.max(activeCount - 1, 1)}`);
-            setOpenLayerIndex(Math.max(activeCount - 1, 1));
-            onFocusLayer(Math.max(activeCount - 1, 1));
-          }}
-          style={[styles.removeLayerButton, !canRemoveLayer ? styles.buttonDisabled : null]}
-          disabled={!canRemoveLayer}>
-          <Text style={styles.removeLayerButtonText}>Remove Last Layer</Text>
-        </Pressable>
       </View>
+
+      {showInsertPanel ? (
+        <View style={styles.insertLayerPanel}>
+          <Text style={styles.insertLayerPanelTitle}>Insert Missing Layer</Text>
+          <Text style={styles.insertLayerPanelHint}>
+            Enter the missing layer depths. Nivium will place it in the snowpack and open it for details.
+          </Text>
+          <View style={styles.layerRow}>
+            <View style={styles.layerCol}>
+              <Text style={styles.subFieldLabel}>Top Depth (cm)</Text>
+              <TextInput
+                value={insertTop}
+                onChangeText={(value) => {
+                  setInsertTop(normalizeBottomDepthDraftValue(value));
+                  if (insertError) {
+                    setInsertError('');
+                  }
+                }}
+                placeholder="Top"
+                placeholderTextColor="#8C8A84"
+                keyboardType="numeric"
+                style={styles.fieldInput}
+              />
+            </View>
+            <View style={styles.layerCol}>
+              <Text style={styles.subFieldLabel}>Bottom Depth (cm)</Text>
+              <TextInput
+                value={insertBottom}
+                onChangeText={(value) => {
+                  setInsertBottom(normalizeBottomDepthDraftValue(value));
+                  if (insertError) {
+                    setInsertError('');
+                  }
+                }}
+                placeholder="Bottom"
+                placeholderTextColor="#8C8A84"
+                keyboardType="numeric"
+                style={styles.fieldInput}
+              />
+            </View>
+          </View>
+          {insertError ? <Text style={styles.insertLayerPanelError}>{insertError}</Text> : null}
+          <View style={styles.layerActionRow}>
+            <Pressable
+              onPress={() => {
+                const result = buildValuesWithInsertedLayerRange(values, insertTop, insertBottom);
+                if ('error' in result) {
+                  setInsertError(result.error);
+                  return;
+                }
+                replaceLayerValues(result.nextValues, onChange);
+                setOpenLayerIndex(result.insertedIndex);
+                onFocusLayer(result.insertedIndex);
+                setShowInsertPanel(false);
+                setInsertTop('');
+                setInsertBottom('');
+                setInsertError('');
+              }}
+              style={styles.addLayerButton}>
+              <Text style={styles.addLayerButtonText}>Place Layer</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setShowInsertPanel(false);
+                setInsertTop('');
+                setInsertBottom('');
+                setInsertError('');
+              }}
+              style={styles.removeLayerButton}>
+              <Text style={styles.removeLayerButtonText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -2534,18 +2733,198 @@ function normalizeStructuredSizeLabel(value: string) {
 }
 
 function clearLayerCard(index: number, onChange: (fieldId: string, value: string) => void) {
-  [
-    `layer_${index}_top`,
-    `layer_${index}_bottom`,
-    `layer_${index}_hardness_1`,
-    `layer_${index}_hardness_2`,
-    `layer_${index}_grain_1`,
-    `layer_${index}_grain_2`,
-    `layer_${index}_size_1`,
-    `layer_${index}_size_2`,
-    `layer_${index}_comment`,
-    `layer_${index}_concern`,
-  ].forEach((fieldId) => onChange(fieldId, ''));
+  getLayerFieldIds(index).forEach((fieldId) => onChange(fieldId, ''));
+}
+
+function getLayerFieldIds(index: number) {
+  return layerFieldSuffixes.map((suffix) => `layer_${index}_${suffix}`);
+}
+
+function snapshotLayerValues(values: Record<string, string>, index: number) {
+  return Object.fromEntries(
+    layerFieldSuffixes.map((suffix) => [suffix, values[`layer_${index}_${suffix}`] ?? ''])
+  );
+}
+
+function writeLayerSnapshot(
+  snapshot: Record<string, string>,
+  targetIndex: number,
+  onChange: (fieldId: string, value: string) => void
+) {
+  layerFieldSuffixes.forEach((suffix) => {
+    onChange(`layer_${targetIndex}_${suffix}`, snapshot[suffix] ?? '');
+  });
+}
+
+function formatLayerDepthValue(value: number) {
+  if (Number.isInteger(value)) {
+    return `${value}`;
+  }
+  return value.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function buildValuesWithInsertedLayerRange(
+  values: Record<string, string>,
+  topDraft: string,
+  bottomDraft: string
+): { nextValues: Record<string, string>; insertedIndex: number } | { error: string } {
+  const activeCount = getVisibleLayerCardCount(values);
+  if (activeCount >= layerIndexes.length) {
+    return { error: 'Maximum layers reached.' };
+  }
+
+  const numericTop = Number(topDraft.trim());
+  const numericBottom = Number(bottomDraft.trim());
+  if (!Number.isFinite(numericTop) || !Number.isFinite(numericBottom)) {
+    return { error: 'Enter both depths before inserting a layer.' };
+  }
+  if (numericBottom <= numericTop) {
+    return { error: 'Bottom depth must be deeper than top depth.' };
+  }
+
+  const segments: { top: number; bottom: number; snapshot: Record<string, string> }[] = [];
+  for (let slot = 1; slot <= activeCount; slot += 1) {
+    const topValue = slot === 1 ? (values[`layer_${slot}_top`] ?? '0').trim() || '0' : (values[`layer_${slot - 1}_bottom`] ?? '').trim();
+    const bottomValue = (values[`layer_${slot}_bottom`] ?? '').trim();
+    const top = Number(topValue);
+    const bottom = Number(bottomValue);
+    if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom <= top) {
+      return { error: 'Fill valid layer depths before inserting a missing layer.' };
+    }
+    segments.push({ top, bottom, snapshot: snapshotLayerValues(values, slot) });
+  }
+
+  const firstTop = segments[0]?.top ?? 0;
+  const packBottom = segments[segments.length - 1]?.bottom ?? 0;
+  if (numericTop < firstTop) {
+    return { error: 'Top depth must stay within the current snowpack.' };
+  }
+  if (numericBottom > packBottom && numericTop !== packBottom) {
+    return { error: 'Bottom depth must stay within the current snowpack.' };
+  }
+
+  const blankSnapshot = Object.fromEntries(layerFieldSuffixes.map((suffix) => [suffix, '']));
+  const nextSegments: { top: number; bottom: number; snapshot: Record<string, string> }[] = [];
+  let insertedIndex = 0;
+
+  for (const segment of segments) {
+    if (segment.bottom <= numericTop) {
+      nextSegments.push({ ...segment, snapshot: { ...segment.snapshot } });
+      continue;
+    }
+
+    if (segment.top >= numericBottom) {
+      if (!insertedIndex) {
+        nextSegments.push({ top: numericTop, bottom: numericBottom, snapshot: { ...blankSnapshot } });
+        insertedIndex = nextSegments.length;
+      }
+      nextSegments.push({ ...segment, snapshot: { ...segment.snapshot } });
+      continue;
+    }
+
+    if (segment.top < numericTop) {
+      nextSegments.push({
+        top: segment.top,
+        bottom: numericTop,
+        snapshot: { ...segment.snapshot, bottom: formatLayerDepthValue(numericTop) },
+      });
+    }
+
+    if (!insertedIndex) {
+      nextSegments.push({ top: numericTop, bottom: numericBottom, snapshot: { ...blankSnapshot } });
+      insertedIndex = nextSegments.length;
+    }
+
+    if (segment.bottom > numericBottom) {
+      nextSegments.push({
+        top: numericBottom,
+        bottom: segment.bottom,
+        snapshot: { ...segment.snapshot, top: formatLayerDepthValue(numericBottom) },
+      });
+    }
+  }
+
+  if (!insertedIndex) {
+    if (numericTop !== packBottom) {
+      return { error: 'Choose a layer range that fits inside the current snowpack.' };
+    }
+    nextSegments.push({ top: numericTop, bottom: numericBottom, snapshot: { ...blankSnapshot } });
+    insertedIndex = nextSegments.length;
+  }
+
+  if (nextSegments.length > layerIndexes.length) {
+    return { error: `This insert needs more than ${layerIndexes.length} layers.` };
+  }
+
+  const nextValues = { ...values };
+  for (const slot of layerIndexes) {
+    getLayerFieldIds(slot).forEach((fieldId) => {
+      nextValues[fieldId] = '';
+    });
+  }
+
+  nextSegments.forEach((segment, slotIndex) => {
+    const targetIndex = slotIndex + 1;
+    const rewritten = { ...segment.snapshot };
+    if (targetIndex === 1) {
+      rewritten.top = formatLayerDepthValue(segment.top);
+    } else {
+      rewritten.top = formatLayerDepthValue(nextSegments[targetIndex - 2]?.bottom ?? numericTop);
+    }
+    rewritten.bottom = formatLayerDepthValue(segment.bottom);
+    layerFieldSuffixes.forEach((suffix) => {
+      nextValues[`layer_${targetIndex}_${suffix}`] = rewritten[suffix] ?? '';
+    });
+  });
+  nextValues.layer_count = `${nextSegments.length}`;
+  return { nextValues, insertedIndex };
+}
+
+function replaceLayerValues(nextValues: Record<string, string>, onChange: (fieldId: string, value: string) => void) {
+  for (const slot of layerIndexes) {
+    clearLayerCard(slot, onChange);
+  }
+  for (const slot of layerIndexes) {
+    const snapshot = Object.fromEntries(
+      layerFieldSuffixes.map((suffix) => [suffix, nextValues[`layer_${slot}_${suffix}`] ?? ''])
+    );
+    writeLayerSnapshot(snapshot, slot, onChange);
+  }
+  onChange('layer_count', nextValues.layer_count ?? '1');
+}
+
+function buildValuesWithRemovedLayerAtIndex(values: Record<string, string>, index: number) {
+  const activeCount = getVisibleLayerCardCount(values);
+  if (activeCount <= 1 || index < 1 || index > activeCount) {
+    return values;
+  }
+
+  const nextValues = { ...values };
+  const snapshots: Record<string, string>[] = [];
+  for (let slot = 1; slot <= activeCount; slot += 1) {
+    if (slot === index) {
+      continue;
+    }
+    snapshots.push(snapshotLayerValues(values, slot));
+  }
+
+  for (const slot of layerIndexes) {
+    getLayerFieldIds(slot).forEach((fieldId) => {
+      nextValues[fieldId] = '';
+    });
+  }
+
+  snapshots.forEach((snapshot, slotIndex) => {
+    const targetIndex = slotIndex + 1;
+    const rewritten = { ...snapshot };
+    rewritten.top = targetIndex === 1 ? '0' : snapshots[targetIndex - 2]?.bottom ?? '';
+    layerFieldSuffixes.forEach((suffix) => {
+      nextValues[`layer_${targetIndex}_${suffix}`] = rewritten[suffix] ?? '';
+    });
+  });
+
+  nextValues.layer_count = `${Math.max(snapshots.length, 1)}`;
+  return nextValues;
 }
 
 function clearTemperatureRow(index: number, onChange: (fieldId: string, value: string) => void) {

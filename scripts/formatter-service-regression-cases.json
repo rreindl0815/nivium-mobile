@@ -64,5 +64,23 @@
       "96-97 DF",
       "ECTP45/100"
     ]
+  },
+  {
+    "name": "dual-grain-dual-concern-stability-challenge",
+    "rawNotes": "First layer from 0 to 30 centimeters. Four finger hardness. Grain form 1 facets. Grain size 1 6 millimeters. Grain form 2 rounds. Grain size 2 1 millimeter. Next layer to 32 centimeters. One finger hardness. Surface hoar. 12 millimeters. My layer of concern is from 0 to 30 centimeters. And the second layer of concern is from 30 to 32 centimeters. Temperature minus 3 at the surface, minus 6 at 30 centimeters. Stability test. Extended column test. P. 11 taps. Sudden planar at 31 centimeters. In the propagation saw test. 25 over 100. End at 31 centimeters.",
+    "mustContain": [
+      "0-30 FC/RG 4F 6mm/1mm red",
+      "30-32 SH 1F 12mm red",
+      "-3 surface",
+      "ECTP11 SP at 31 cm",
+      "PST 25/100 END at 31 cm"
+    ],
+    "mustNotContain": [
+      "0-30 RG/FC",
+      "0-30 FC 4F 6mm",
+      "30-32 SH 12mm 1F",
+      "ECTP11 at 31 cm",
+      "Notes: second layer of concern"
+    ]
   }
 ]

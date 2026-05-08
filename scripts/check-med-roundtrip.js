@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global __dirname */
 
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +14,7 @@ function parseFormattedProfile(formattedText) {
   const notes = [];
 
   const stabilityPattern =
-    /\b(?:CT(?:E|M|H)?\d*(?:\s+(?:SP|SC|PC|RP|BRK))?\s+at\s+\d+(?:\.\d+)?\s*cm|ECT[PNX]?\d*(?:\s+(?:SP|SC|PC|RP|BRK))?\s*(?:at\s+\d+(?:\.\d+)?\s*cm)?|PST\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?(?:\s+(?:END|ARR))?\s+at\s+\d+(?:\.\d+)?\s*cm|HS\s+(?:easy|moderate|hard)\s+at\s+\d+(?:\.\d+)?\s*cm|SS\s+(?:easy|moderate|hard)(?:\s+(?:SP|SC|PC|RP|BRK))?\s+at\s+\d+(?:\.\d+)?\s*cm|RB\d+\s+at\s+\d+(?:\.\d+)?\s*cm)\b/gi;
+    /\b(?:CT(?:E|M|H)?\d*(?:\s+(?:SP|SC|PC|RP|BRK))?\s+at\s+\d+(?:\.\d+)?\s*cm|ECT[PNX]?\d*(?:\s+(?:SP|SC|PC|RP|BRK))?\s*(?:at\s+\d+(?:\.\d+)?\s*cm)?|PST\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?(?:\s+(?:END|ARR|SF))?\s+at\s+\d+(?:\.\d+)?\s*cm|HS\s+(?:easy|moderate|hard)\s+at\s+\d+(?:\.\d+)?\s*cm|SS\s+(?:easy|moderate|hard)(?:\s+(?:SP|SC|PC|RP|BRK))?\s+at\s+\d+(?:\.\d+)?\s*cm|RB\d+\s+at\s+\d+(?:\.\d+)?\s*cm)\b/gi;
 
   const splitInlineStability = (line) => {
     const found = Array.from(line.matchAll(stabilityPattern)).map((m) => m[0].replace(/\s+/g, ' ').trim());

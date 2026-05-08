@@ -2,14 +2,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useSavedProfiles } from '@/context/saved-profiles-context';
+import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 
 export default function RawNotesPendingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ profileId?: string }>();
   const { profiles, selectedProfile, ensureProfilePdf, reopenProfileForEditing } = useSavedProfiles();
+  const { loadFromSavedProfile } = useVoiceNoteSession();
   const explicitProfile = params.profileId ? profiles.find((profile) => profile.id === params.profileId) ?? null : null;
   const activeProfile = explicitProfile ?? selectedProfile;
-  const notePreview = activeProfile?.rawNotes?.trim() || 'No voice notes were saved on this profile.';
+  const notePreview = activeProfile?.transcriptRaw?.trim() || activeProfile?.rawNotes?.trim() || 'No voice notes were saved on this profile.';
 
   const handleRetry = () => {
     if (!activeProfile) {
@@ -41,11 +43,19 @@ export default function RawNotesPendingScreen() {
 
     void (async () => {
       const mode = await reopenProfileForEditing(activeProfile.id);
+      if (mode === 'raw-notes' && activeProfile.formattedText.trim()) {
+        loadFromSavedProfile(activeProfile);
+        router.replace('/voice-review');
+        return;
+      }
       if (mode === 'raw-notes') {
         router.replace('/record-notes');
         return;
       }
-      router.replace('/manual-entry');
+      router.replace({
+        pathname: '/manual-entry',
+        params: { editProfileId: activeProfile.id },
+      });
     })();
   };
 

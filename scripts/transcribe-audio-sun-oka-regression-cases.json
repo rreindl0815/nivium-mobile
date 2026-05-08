@@ -1,0 +1,21 @@
+[
+  {
+    "name": "sun-oka-dual-grain-concern-stability",
+    "expectedStatus": 200,
+    "mustContain": [
+      "0-45 DF/PP 4F+-4F 7mm/4mm",
+      "55-56 PP 4F red",
+      "95-109 SH/FC 4F 10mm/4mm red",
+      "-1 surface",
+      "ECTP7 SP at 55 cm",
+      "PST 8/100 ARR at 179 cm"
+    ],
+    "mustNotContain": [
+      "0-45 PP 4F+-4F 4mm",
+      "0-45 PP/DF",
+      "95-109 FC 4F 10mm red",
+      "ECT 7",
+      "In the PST 8 over 100"
+    ]
+  }
+]

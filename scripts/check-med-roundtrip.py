@@ -11,7 +11,7 @@ def parse_formatted_profile(formatted_text: str):
     stability_pattern = re.compile(
         r"\b(?:CT(?:E|M|H)?\d*(?:\s+(?:SP|SC|PC|RP|BRK))?\s+at\s+\d+(?:\.\d+)?\s*cm|"
         r"ECT[PNX]?\d*(?:\s+(?:SP|SC|PC|RP|BRK))?\s*(?:at\s+\d+(?:\.\d+)?\s*cm)?|"
-        r"PST\s+\d+(?:\.\d+)?/\d+(?:\.\d+)?(?:\s+(?:END|ARR))?\s+at\s+\d+(?:\.\d+)?\s*cm|"
+        r"PST\s+\d+(?:\.\d+)?/\d+(?:\.\d+)?(?:\s+(?:END|ARR|SF))?\s+at\s+\d+(?:\.\d+)?\s*cm|"
         r"HS\s+(?:easy|moderate|hard)\s+at\s+\d+(?:\.\d+)?\s*cm|"
         r"SS\s+(?:easy|moderate|hard)(?:\s+(?:SP|SC|PC|RP|BRK))?\s+at\s+\d+(?:\.\d+)?\s*cm|"
         r"RB\d+\s+at\s+\d+(?:\.\d+)?\s*cm)\b",

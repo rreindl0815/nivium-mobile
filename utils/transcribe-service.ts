@@ -7,6 +7,7 @@ export type TranscribeResponse = {
   transcript: string;
   formattedText?: string;
   resolvedValues?: Record<string, string>;
+  warnings?: string[];
   formatterVersion?: string;
 };
 
@@ -87,4 +88,3 @@ export async function transcribeAudioFromServiceAsync(args: {
 
   return payload;
 }
-

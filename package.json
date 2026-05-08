@@ -10,8 +10,13 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "check:service": "python3 ./scripts/check-formatter-service.py --runs 3 --strict-identical",
+    "check:service:local": "python3 ./scripts/check-formatter-service.py --endpoint http://127.0.0.1:8791/format --runs 3 --strict-identical",
+    "check:backend:guardrails": "npm --prefix ../nivium-backend/formatter run check:guardrails",
     "check:audio": "python3 ./scripts/check-transcribe-audio.py --audio /Users/robertreindl/Desktop/nivium-test.m4a --runs 5 --strict-identical",
     "check:audio:api": "python3 ./scripts/check-transcribe-audio.py --audio /Users/robertreindl/Desktop/nivium-test.m4a --endpoint https://api.nivium.ca/transcribe-format --runs 5 --strict-identical",
+    "check:audio:sun-oka:local": "python3 ./scripts/check-transcribe-audio.py --audio \"/Users/robertreindl/Desktop/Sun-Oka Beach Park.m4a\" --cases ./scripts/transcribe-audio-sun-oka-regression-cases.json --endpoint http://127.0.0.1:8791/transcribe-format --runs 3 --strict-identical",
+    "check:audio:sun-oka:api": "python3 ./scripts/check-transcribe-audio.py --audio \"/Users/robertreindl/Desktop/Sun-Oka Beach Park.m4a\" --cases ./scripts/transcribe-audio-sun-oka-regression-cases.json --endpoint https://api.nivium.ca/transcribe-format --runs 3 --strict-identical",
+    "check:guardrails:local": "npm run check:backend:guardrails && npm run check:audio:sun-oka:local",
     "check:med": "node ./scripts/check-med-roundtrip.js"
   },
   "dependencies": {
