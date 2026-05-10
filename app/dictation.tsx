@@ -19,7 +19,10 @@ import {
 
 import { AccordionSection } from '@/components/accordion-section';
 import { LayerEditor as ReviewStyleLayerEditor } from '@/components/profile-editor/layer-editor';
+import { NotesEditor as ReviewStyleNotesEditor } from '@/components/profile-editor/notes-editor';
 import { ObservationDetailsEditor } from '@/components/profile-editor/observation-details-editor';
+import { StabilityEditor as ReviewStyleStabilityEditor } from '@/components/profile-editor/stability-editor';
+import { TemperatureEditor as ReviewStyleTemperatureEditor } from '@/components/profile-editor/temperature-editor';
 import type { CurrentLocationStatus } from '@/components/profile-editor/editor-types';
 import { useProfileDraft } from '@/context/profile-draft-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
@@ -539,13 +542,19 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                 sectionOffsetsRef.current[section.id] = event.nativeEvent.layout.y;
               }}>
               <AccordionSection
-                title={isManualMode && section.id === 'metadata' ? 'Observation Details' : section.title}
+                title={
+                  isManualMode && section.id === 'metadata'
+                    ? 'Observation Details'
+                    : isManualMode && section.id === 'temperatures'
+                      ? 'Temperatures'
+                      : section.title
+                }
                 description={
                   isManualMode && section.id === 'metadata'
                     ? 'General, location, weather, and snow conditions'
                     : section.description
                 }
-                accent={isManualMode ? '#20384D' : section.accent}
+                accent={section.accent}
                 compact={isManualMode}
                 isOpen={openSectionId === section.id}
                 onToggle={() => {
@@ -616,6 +625,19 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                     }}
                   />
                 ) : section.id === 'temperatures' ? (
+                  isManualMode ? (
+                    <ReviewStyleTemperatureEditor
+                      values={draft.values}
+                      onChange={(fieldId, value) => {
+                        setSaveMessage('');
+                        setFieldValue(fieldId, value);
+                      }}
+                      onReplace={(nextValues) => {
+                        setSaveMessage('');
+                        mergeFieldValues(nextValues);
+                      }}
+                    />
+                  ) : (
                   <TemperatureBuilder
                     values={draft.values}
                     onChange={(fieldId, value) => {
@@ -623,7 +645,21 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                       setFieldValue(fieldId, value);
                     }}
                   />
+                  )
                 ) : section.id === 'tests' ? (
+                  isManualMode ? (
+                    <ReviewStyleStabilityEditor
+                      values={draft.values}
+                      onChange={(fieldId, value) => {
+                        setSaveMessage('');
+                        setFieldValue(fieldId, value);
+                      }}
+                      onReplace={(nextValues) => {
+                        setSaveMessage('');
+                        mergeFieldValues(nextValues);
+                      }}
+                    />
+                  ) : (
                   <StabilityTestBuilder
                     values={draft.values}
                     onChange={(fieldId, value) => {
@@ -631,6 +667,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                       setFieldValue(fieldId, value);
                     }}
                   />
+                  )
                 ) : section.id === 'metadata' && isManualMode ? (
                   <ObservationDetailsEditor
                     values={draft.values}
@@ -641,6 +678,14 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                     onUseCurrentLocation={applyCurrentLocation}
                     isApplyingCurrentLocation={isApplyingCurrentLocation}
                     currentLocationStatus={currentLocationStatus}
+                  />
+                ) : section.id === 'notes' && isManualMode ? (
+                  <ReviewStyleNotesEditor
+                    value={draft.values.comments ?? ''}
+                    onChange={(value) => {
+                      setSaveMessage('');
+                      setFieldValue('comments', value);
+                    }}
                   />
                 ) : (
                   section.fields.map((field) => (
@@ -1963,6 +2008,7 @@ function ManualLayerEditor({
   onFocusLayer: (index: number) => void;
 }) {
   const [openLayerIndex, setOpenLayerIndex] = useState(0);
+  const showInsertLayerAction = getVisibleLayerCardCount(values) > 1;
 
   return (
     <ReviewStyleLayerEditor
@@ -1974,6 +2020,7 @@ function ManualLayerEditor({
       onEditorLayout={onBuilderLayout}
       onLayerLayout={onLayerLayout}
       onFocusLayer={onFocusLayer}
+      showInsertLayerAction={showInsertLayerAction}
     />
   );
 }

@@ -28,6 +28,7 @@ export function LayerEditor({
   onEditorLayout,
   onLayerLayout,
   onFocusLayer,
+  showInsertLayerAction = true,
 }: {
   values: FieldValueMap;
   onChange: (fieldId: string, value: string) => void;
@@ -37,6 +38,7 @@ export function LayerEditor({
   onEditorLayout?: (offsetY: number) => void;
   onLayerLayout?: (index: number, offsetY: number) => void;
   onFocusLayer?: (index: number) => void;
+  showInsertLayerAction?: boolean;
 }) {
   const resolvedActiveCount = getVisibleLayerCardCount(values);
   const activeCount = Math.max(resolvedActiveCount, openLayerIndex || 0);
@@ -52,6 +54,15 @@ export function LayerEditor({
       onOpenLayerIndexChange(Math.max(activeCount, 1));
     }
   }, [activeCount, onOpenLayerIndexChange, openLayerIndex]);
+
+  useEffect(() => {
+    if (!showInsertLayerAction && showInsertPanel) {
+      setShowInsertPanel(false);
+      setInsertTop('');
+      setInsertBottom('');
+      setInsertError('');
+    }
+  }, [showInsertLayerAction, showInsertPanel]);
 
   return (
     <View
@@ -290,18 +301,20 @@ export function LayerEditor({
       })}
 
       <View style={styles.sectionActionRow}>
-        <Pressable
-          onPress={() => {
-            if (!canAddLayer) {
-              return;
-            }
-            setShowInsertPanel((current) => !current);
-            setInsertError('');
-          }}
-          style={[styles.primaryTinyButton, !canAddLayer ? styles.buttonDisabled : null]}
-          disabled={!canAddLayer}>
-          <Text style={styles.primaryTinyButtonText}>Insert Layer</Text>
-        </Pressable>
+        {showInsertLayerAction ? (
+          <Pressable
+            onPress={() => {
+              if (!canAddLayer) {
+                return;
+              }
+              setShowInsertPanel((current) => !current);
+              setInsertError('');
+            }}
+            style={[styles.primaryTinyButton, !canAddLayer ? styles.buttonDisabled : null]}
+            disabled={!canAddLayer}>
+            <Text style={styles.primaryTinyButtonText}>Insert Layer</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={() => {
             if (!canAddLayer) {
@@ -322,7 +335,7 @@ export function LayerEditor({
         </Pressable>
       </View>
 
-      {showInsertPanel ? (
+      {showInsertLayerAction && showInsertPanel ? (
         <View style={styles.insertLayerPanel}>
           <Text style={styles.insertLayerTitle}>Insert Missing Layer</Text>
           <Text style={styles.insertLayerHint}>
