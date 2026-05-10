@@ -23,6 +23,7 @@ import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { demoManualEntryProfiles, demoManualEntryValues, demoRawNotes } from '@/data/demo-profile';
 import { fieldCardSections, requiredFieldIds } from '@/data/field-card';
 import type { SavedProfile } from '@/types/profile';
+import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 
 const SAMPLE_LIBRARY_KEY = 'nivium-sample-library-v2';
@@ -39,6 +40,10 @@ type SampleLibraryEntry = {
   title: string;
   rawNotes: string;
   values: Record<string, string>;
+};
+type CurrentLocationStatus = {
+  tone: 'success' | 'error';
+  message: string;
 };
 
 function orderSampleEntries(entries: SampleLibraryEntry[]) {
@@ -127,6 +132,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
   const {
     draft,
     setRawNotes,
+    mergeFieldValues,
     replaceFieldValues,
     loadFreshRawNotes,
     loadFreshDraft,
@@ -137,6 +143,8 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
   } = useProfileDraft();
   const { createProfileFromDraft, profiles } = useSavedProfiles();
   const [saveMessage, setSaveMessage] = useState('');
+  const [isApplyingCurrentLocation, setIsApplyingCurrentLocation] = useState(false);
+  const [currentLocationStatus, setCurrentLocationStatus] = useState<CurrentLocationStatus | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -253,6 +261,37 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
   });
   const nextSection =
     sectionSummaries.find((section) => section.completedCount < section.fields.length) ?? sectionSummaries[0];
+
+  const applyCurrentLocation = () => {
+    void (async () => {
+      if (isApplyingCurrentLocation) {
+        return;
+      }
+
+      setIsApplyingCurrentLocation(true);
+      try {
+        const currentLocation = await resolveCurrentLocationValuesAsync();
+        setSaveMessage('');
+        mergeFieldValues({
+          elevation: currentLocation.elevation,
+          lat_long: currentLocation.latLong,
+        });
+        setCurrentLocationStatus({
+          tone: 'success',
+          message: currentLocation.hasElevation
+            ? 'Filled Lat / Long and Elevation from your current position.'
+            : 'Filled Lat / Long from your current position. Elevation was unavailable and can be entered manually.',
+        });
+      } catch (error) {
+        setCurrentLocationStatus({
+          tone: 'error',
+          message: getCurrentLocationErrorMessage(error),
+        });
+      } finally {
+        setIsApplyingCurrentLocation(false);
+      }
+    })();
+  };
 
   useEffect(() => {
     if (!openSectionId) {
@@ -557,84 +596,121 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                   />
                 ) : (
                   section.fields.map((field) => (
-                    <View key={field.id} style={styles.field}>
-                      <Text style={styles.fieldLabel}>{field.label}</Text>
-                      {field.id === 'date' ? (
-                        <DateField
-                          value={draft.values[field.id] ?? ''}
-                          onChange={(value) => {
-                            setSaveMessage('');
-                            setFieldValue(field.id, value);
-                          }}
-                        />
-                      ) : field.id === 'time' ? (
-                        <SelectorField
-                          label="Time"
-                          value={draft.values[field.id] ?? ''}
-                          placeholder="Choose time"
-                          options={timeOptions}
-                          onSelect={(value) => {
-                            setSaveMessage('');
-                            setFieldValue(field.id, value);
-                          }}
-                        />
-                      ) : field.id === 'wind' ? (
-                        <WindField
-                          value={draft.values[field.id] ?? ''}
-                          onChange={(value) => {
-                            setSaveMessage('');
-                            setFieldValue(field.id, value);
-                          }}
-                        />
-                      ) : field.options ? (
-                        <View style={styles.optionList}>
-                          {field.options.map((option) => {
-                            const selected = (draft.values[field.id] ?? '') === option;
-                            return (
-                              <Pressable
-                                key={option}
-                                onPress={() => {
-                                  setSaveMessage('');
-                                  setFieldValue(field.id, option);
-                                }}
-                                style={[styles.optionChip, selected ? styles.optionChipSelected : null]}>
-                                <Text style={[styles.optionChipText, selected ? styles.optionChipTextSelected : null]}>
-                                  {option}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
+                    <View key={field.id}>
+                      {isManualMode && section.id === 'metadata' && field.id === 'elevation' ? (
+                        <View style={styles.locationHelperCard}>
+                          <Text style={styles.locationHelperTitle}>Current Location</Text>
+                          <Pressable
+                            onPress={applyCurrentLocation}
+                            disabled={isApplyingCurrentLocation}
+                            style={({ pressed }) => [
+                              styles.locationHelperButton,
+                              isApplyingCurrentLocation ? styles.locationHelperButtonDisabled : null,
+                              pressed && !isApplyingCurrentLocation ? styles.pressed : null,
+                            ]}>
+                            {isApplyingCurrentLocation ? (
+                              <View style={styles.loadingRow}>
+                                <ActivityIndicator size="small" color="#FFF8EE" />
+                                <Text style={styles.locationHelperButtonText}>Using Current Location...</Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.locationHelperButtonText}>
+                                Use Current Location for Lat / Long and Elevation
+                              </Text>
+                            )}
+                          </Pressable>
+                          {currentLocationStatus ? (
+                            <Text
+                              style={[
+                                styles.locationHelperMessage,
+                                currentLocationStatus.tone === 'error'
+                                  ? styles.locationHelperMessageError
+                                  : styles.locationHelperMessageSuccess,
+                              ]}>
+                              {currentLocationStatus.message}
+                            </Text>
+                          ) : null}
                         </View>
-                      ) : (
-                        <TextInput
-                          value={draft.values[field.id] ?? ''}
-                          onChangeText={(value) => {
-                            setSaveMessage('');
-                            setFieldValue(field.id, value);
-                          }}
-                          onFocus={() => {
-                            if (!isManualMode || field.id !== 'comments') {
-                              return;
-                            }
-                            const targetY = Math.max(sectionsOffsetRef.current + (sectionOffsetsRef.current.notes ?? 0) - 40, 0);
-                            setTimeout(() => {
-                              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-                            }, 120);
-                            setTimeout(() => {
-                              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-                            }, 260);
-                            setTimeout(() => {
-                              scrollViewRef.current?.scrollTo({ y: targetY + 80, animated: true });
-                            }, 420);
-                          }}
-                          placeholder={field.placeholder}
-                          placeholderTextColor="#8C8A84"
-                          multiline={field.multiline}
-                          keyboardType={field.keyboardType}
-                          style={[styles.fieldInput, field.multiline ? styles.multilineInput : null]}
-                          textAlignVertical={field.multiline ? 'top' : 'center'}
-                        />
-                      )}
+                      ) : null}
+                      <View style={styles.field}>
+                        <Text style={styles.fieldLabel}>{field.label}</Text>
+                        {field.id === 'date' ? (
+                          <DateField
+                            value={draft.values[field.id] ?? ''}
+                            onChange={(value) => {
+                              setSaveMessage('');
+                              setFieldValue(field.id, value);
+                            }}
+                          />
+                        ) : field.id === 'time' ? (
+                          <SelectorField
+                            label="Time"
+                            value={draft.values[field.id] ?? ''}
+                            placeholder="Choose time"
+                            options={timeOptions}
+                            onSelect={(value) => {
+                              setSaveMessage('');
+                              setFieldValue(field.id, value);
+                            }}
+                          />
+                        ) : field.id === 'wind' ? (
+                          <WindField
+                            value={draft.values[field.id] ?? ''}
+                            onChange={(value) => {
+                              setSaveMessage('');
+                              setFieldValue(field.id, value);
+                            }}
+                          />
+                        ) : field.options ? (
+                          <View style={styles.optionList}>
+                            {field.options.map((option) => {
+                              const selected = (draft.values[field.id] ?? '') === option;
+                              return (
+                                <Pressable
+                                  key={option}
+                                  onPress={() => {
+                                    setSaveMessage('');
+                                    setFieldValue(field.id, option);
+                                  }}
+                                  style={[styles.optionChip, selected ? styles.optionChipSelected : null]}>
+                                  <Text style={[styles.optionChipText, selected ? styles.optionChipTextSelected : null]}>
+                                    {option}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          <TextInput
+                            value={draft.values[field.id] ?? ''}
+                            onChangeText={(value) => {
+                              setSaveMessage('');
+                              setFieldValue(field.id, value);
+                            }}
+                            onFocus={() => {
+                              if (!isManualMode || field.id !== 'comments') {
+                                return;
+                              }
+                              const targetY = Math.max(sectionsOffsetRef.current + (sectionOffsetsRef.current.notes ?? 0) - 40, 0);
+                              setTimeout(() => {
+                                scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                              }, 120);
+                              setTimeout(() => {
+                                scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                              }, 260);
+                              setTimeout(() => {
+                                scrollViewRef.current?.scrollTo({ y: targetY + 80, animated: true });
+                              }, 420);
+                            }}
+                            placeholder={field.placeholder}
+                            placeholderTextColor="#8C8A84"
+                            multiline={field.multiline}
+                            keyboardType={field.keyboardType}
+                            style={[styles.fieldInput, field.multiline ? styles.multilineInput : null]}
+                            textAlignVertical={field.multiline ? 'top' : 'center'}
+                          />
+                        )}
+                      </View>
                     </View>
                   ))
                 )}
@@ -1463,27 +1539,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   deleteLayerButton: {
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    backgroundColor: '#C62821',
+    backgroundColor: '#FFF8F6',
     alignItems: 'center',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(255,255,255,0.16)',
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(255,255,255,0.1)',
-    borderRightWidth: 2,
-    borderRightColor: 'rgba(7,20,36,0.26)',
-    borderBottomWidth: 3,
-    borderBottomColor: 'rgba(7,20,36,0.42)',
-    shadowColor: '#091827',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 7,
+    borderWidth: 1,
+    borderColor: '#C97C72',
   },
   deleteLayerButtonText: {
-    color: '#FFF7F6',
+    color: '#9B332A',
     fontSize: 15,
     fontWeight: '800',
   },
@@ -1491,6 +1556,51 @@ const styles = StyleSheet.create({
     color: '#20384D',
     fontSize: 14,
     fontWeight: '700',
+  },
+  locationHelperCard: {
+    gap: 10,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: '#D7E0E8',
+    borderWidth: 1,
+    borderColor: '#31495C',
+  },
+  locationHelperTitle: {
+    color: '#173248',
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  locationHelperButton: {
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#173248',
+  },
+  locationHelperButtonDisabled: {
+    opacity: 0.7,
+  },
+  locationHelperButtonText: {
+    color: '#FFF8EE',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  locationHelperMessage: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  locationHelperMessageSuccess: {
+    color: '#2F5D45',
+  },
+  locationHelperMessageError: {
+    color: '#9B332A',
   },
   fieldInput: {
     borderRadius: 8,
@@ -1989,6 +2099,7 @@ function LayerBuilder({
                     value={values[`layer_${index}_hardness_1`] ?? ''}
                     placeholder="Choose"
                     options={hardnessOptions}
+                    clearOptionLabel="None"
                     onSelect={(value) => onChange(`layer_${index}_hardness_1`, value)}
                   />
                 </View>
@@ -2015,6 +2126,7 @@ function LayerBuilder({
                     value={values[`layer_${index}_grain_1`] ?? ''}
                     placeholder="Choose"
                     options={grainOptions}
+                    clearOptionLabel="None"
                     onSelect={(value) => onChange(`layer_${index}_grain_1`, value)}
                   />
                 </View>
@@ -2560,7 +2672,7 @@ function StabilityTestBuilder({
                   ) : null}
                   <View style={styles.layerRow}>
                     <View style={styles.layerCol}>
-                      <Text style={styles.subFieldLabel}>{type === 'ECT' && result === 'ECTX' ? 'Depth (optional)' : 'Depth (cm)'}</Text>
+                      <Text style={styles.subFieldLabel}>Depth (cm)</Text>
                       <TextInput
                         value={depth}
                         onChangeText={(value) => onChange(`test_${index}_depth`, value.replace(/[^0-9.]/g, ''))}

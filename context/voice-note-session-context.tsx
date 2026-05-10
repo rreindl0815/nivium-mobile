@@ -67,21 +67,21 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
             warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
             updatedAt: parsed.updatedAt ?? new Date().toISOString(),
           };
-          const fallbackReviewValues = hydrateStructuredValuesFromFormattedText(
+          const seededReviewValues = hydrateStructuredValuesFromFormattedText(
             loadedSession.engineTextCurrent?.trim() || loadedSession.engineTextOriginal?.trim() || '',
-            {}
+            loadedSession.reviewValues ?? {}
           );
           const nextSession =
-            Object.keys(loadedSession.reviewValues).length > 0
-              ? buildSessionFromReviewValues(loadedSession, loadedSession.reviewValues)
-              : (loadedSession.engineTextCurrent?.trim() || loadedSession.engineTextOriginal?.trim())
-                ? buildSessionFromReviewValues(
-                    {
-                      ...loadedSession,
-                      reviewValues: fallbackReviewValues,
-                    },
-                    fallbackReviewValues
-                  )
+            (loadedSession.engineTextCurrent?.trim() || loadedSession.engineTextOriginal?.trim())
+              ? buildSessionFromReviewValues(
+                  {
+                    ...loadedSession,
+                    reviewValues: seededReviewValues,
+                  },
+                  seededReviewValues
+                )
+              : Object.keys(loadedSession.reviewValues).length > 0
+                ? buildSessionFromReviewValues(loadedSession, loadedSession.reviewValues)
                 : loadedSession;
           setSession(nextSession);
         }

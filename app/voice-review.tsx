@@ -19,6 +19,7 @@ import { AccordionSection } from '@/components/accordion-section';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { fieldCardSections, requiredFieldIds } from '@/data/field-card';
+import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
 
 const hardnessOptions = ['F', 'F+', '4F', '4F+', '1F', '1F+', 'P', 'P+', 'K', 'K+', 'I'];
 const grainOptions = ['PP', 'DF', 'RG', 'FC', 'SH', 'DH', 'MF', 'IFrc', 'MFcr'];
@@ -116,7 +117,7 @@ const observationGroups = [
   },
   {
     title: 'Location',
-    fields: ['elevation', 'aspect', 'slope_angle', 'lat_long'],
+    fields: ['elevation', 'lat_long', 'aspect', 'slope_angle'],
   },
   {
     title: 'Weather',
@@ -132,12 +133,18 @@ const metadataFieldMap = new Map(
   (fieldCardSections.find((section) => section.id === 'metadata')?.fields ?? []).map((field) => [field.id, field])
 );
 const chipOptionFieldIds = new Set(['aspect', 'sky', 'precip', 'surface_grain']);
+type CurrentLocationStatus = {
+  tone: 'success' | 'error';
+  message: string;
+};
 
 export default function VoiceReviewScreen() {
   const router = useRouter();
   const { session, setReviewFieldValue, replaceReviewValues } = useVoiceNoteSession();
   const { createProfileFromVoiceSession } = useSavedProfiles();
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [isApplyingCurrentLocation, setIsApplyingCurrentLocation] = useState(false);
+  const [currentLocationStatus, setCurrentLocationStatus] = useState<CurrentLocationStatus | null>(null);
   const [openSectionId, setOpenSectionId] = useState<string>('');
   const [openLayerIndex, setOpenLayerIndex] = useState(0);
   const scrollViewRef = useRef<ScrollView | null>(null);
@@ -148,7 +155,12 @@ export default function VoiceReviewScreen() {
   const layerWarningCount = countLayerWarnings(values);
   const temperatureWarningCount = countTemperatureWarnings(values);
   const stabilityWarningCount = countStabilityWarnings(values);
-  const totalWarningCount = session.warnings.length + layerWarningCount + temperatureWarningCount + stabilityWarningCount;
+  const serviceWarningBuckets = bucketFormatterWarnings(session.warnings);
+  const totalWarningCount =
+    serviceWarningBuckets.other +
+    Math.max(layerWarningCount, serviceWarningBuckets.layers) +
+    Math.max(temperatureWarningCount, serviceWarningBuckets.temperatures) +
+    Math.max(stabilityWarningCount, serviceWarningBuckets.stability);
   const actualLayerCount = getActualLayerCount(values);
   const actualTemperatureCount = getActualTemperatureCount(values);
   const actualTestCount = getActualStabilityCount(values);
@@ -212,6 +224,37 @@ export default function VoiceReviewScreen() {
     };
     setTimeout(scrollToSection, 50);
     setTimeout(scrollToSection, 180);
+  };
+
+  const applyCurrentLocation = () => {
+    void (async () => {
+      if (isApplyingCurrentLocation) {
+        return;
+      }
+
+      setIsApplyingCurrentLocation(true);
+      try {
+        const currentLocation = await resolveCurrentLocationValuesAsync();
+        replaceReviewValues({
+          ...values,
+          elevation: currentLocation.elevation,
+          lat_long: currentLocation.latLong,
+        });
+        setCurrentLocationStatus({
+          tone: 'success',
+          message: currentLocation.hasElevation
+            ? 'Filled Lat / Long and Elevation from your current position.'
+            : 'Filled Lat / Long from your current position. Elevation was unavailable and can be entered manually.',
+        });
+      } catch (error) {
+        setCurrentLocationStatus({
+          tone: 'error',
+          message: getCurrentLocationErrorMessage(error),
+        });
+      } finally {
+        setIsApplyingCurrentLocation(false);
+      }
+    })();
   };
 
   return (
@@ -286,7 +329,13 @@ export default function VoiceReviewScreen() {
               accent="#A94C2A"
               isOpen={openSectionId === 'observation'}
               onToggle={() => toggleSection('observation')}>
-              <ObservationDetailsEditor values={values} onChange={setReviewFieldValue} />
+              <ObservationDetailsEditor
+                values={values}
+                onChange={setReviewFieldValue}
+                onUseCurrentLocation={applyCurrentLocation}
+                isApplyingCurrentLocation={isApplyingCurrentLocation}
+                currentLocationStatus={currentLocationStatus}
+              />
             </AccordionSection>
           </View>
 
@@ -446,15 +495,56 @@ export default function VoiceReviewScreen() {
 function ObservationDetailsEditor({
   values,
   onChange,
+  onUseCurrentLocation,
+  isApplyingCurrentLocation,
+  currentLocationStatus,
 }: {
   values: Record<string, string>;
   onChange: (fieldId: string, value: string) => void;
+  onUseCurrentLocation: () => void;
+  isApplyingCurrentLocation: boolean;
+  currentLocationStatus: CurrentLocationStatus | null;
 }) {
   return (
     <View style={styles.groupStack}>
       {observationGroups.map((group) => (
         <View key={group.title} style={styles.groupCard}>
           <Text style={styles.groupTitle}>{group.title}</Text>
+          {group.title === 'Location' ? (
+            <View style={styles.locationHelperCard}>
+              <Text style={styles.locationHelperTitle}>Current Location</Text>
+              <Pressable
+                onPress={onUseCurrentLocation}
+                disabled={isApplyingCurrentLocation}
+                style={({ pressed }) => [
+                  styles.locationHelperButton,
+                  isApplyingCurrentLocation ? styles.locationHelperButtonDisabled : null,
+                  pressed && !isApplyingCurrentLocation ? styles.pressed : null,
+                ]}>
+                {isApplyingCurrentLocation ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator size="small" color="#FFF8EE" />
+                    <Text style={styles.locationHelperButtonText}>Using Current Location...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.locationHelperButtonText}>
+                    Use Current Location for Lat / Long and Elevation
+                  </Text>
+                )}
+              </Pressable>
+              {currentLocationStatus ? (
+                <Text
+                  style={[
+                    styles.locationHelperMessage,
+                    currentLocationStatus.tone === 'error'
+                      ? styles.locationHelperMessageError
+                      : styles.locationHelperMessageSuccess,
+                  ]}>
+                  {currentLocationStatus.message}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           <View style={styles.fieldGrid}>
             {group.fields.map((fieldId) => {
               const field = metadataFieldMap.get(fieldId);
@@ -777,6 +867,7 @@ function LayerReviewEditor({
                       value={values[`layer_${index}_hardness_1`] ?? ''}
                       placeholder="Choose hardness"
                       options={hardnessOptions}
+                      clearOptionLabel="None"
                       onSelect={(next) => onChange(`layer_${index}_hardness_1`, next)}
                     />
                   </View>
@@ -799,6 +890,7 @@ function LayerReviewEditor({
                       value={values[`layer_${index}_grain_1`] ?? ''}
                       placeholder="Choose grain"
                       options={grainOptions}
+                      clearOptionLabel="None"
                       onSelect={(next) => onChange(`layer_${index}_grain_1`, next)}
                     />
                   </View>
@@ -1485,6 +1577,34 @@ function countStabilityWarnings(values: Record<string, string>) {
   return total;
 }
 
+function bucketFormatterWarnings(warnings: string[]) {
+  const buckets = {
+    layers: 0,
+    temperatures: 0,
+    stability: 0,
+    other: 0,
+  };
+
+  warnings.forEach((warning) => {
+    const text = warning.toLowerCase();
+    if (/\b(stability test|compression test|shear test|rutschblock|ect|pst|ct\d|ss\b|hs\b|rb\d)\b/.test(text)) {
+      buckets.stability += 1;
+      return;
+    }
+    if (/\b(temp|temperature|surface temp)\b/.test(text)) {
+      buckets.temperatures += 1;
+      return;
+    }
+    if (/\b(layer|grain|hardness|depth|concern|size)\b/.test(text)) {
+      buckets.layers += 1;
+      return;
+    }
+    buckets.other += 1;
+  });
+
+  return buckets;
+}
+
 function countStabilityWarning(values: Record<string, string>, index: number) {
   const type = (values[`test_${index}_type`] ?? '').trim();
   const result = (values[`test_${index}_result`] ?? '').trim();
@@ -1499,7 +1619,7 @@ function countStabilityWarning(values: Record<string, string>, index: number) {
   let count = 0;
   if (!type) count += 1;
   if (!result && type !== 'CT') count += 1;
-  if (!depth && !(type === 'ECT' && result === 'ECTX')) count += 1;
+  if (!depth) count += 1;
   if (type === 'PST' && (!pstCut || !pstColumn)) count += 1;
   return count;
 }
@@ -2180,6 +2300,47 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: '800',
   },
+  locationHelperCard: {
+    gap: 10,
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#D9E4EB',
+  },
+  locationHelperTitle: {
+    color: '#355062',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  locationHelperButton: {
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#20384D',
+    alignItems: 'center',
+  },
+  locationHelperButtonDisabled: {
+    opacity: 0.7,
+  },
+  locationHelperButtonText: {
+    color: '#FFF8EE',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  locationHelperMessage: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  locationHelperMessageSuccess: {
+    color: '#2F5D45',
+  },
+  locationHelperMessageError: {
+    color: '#9B332A',
+  },
   fieldGrid: {
     gap: 12,
   },
@@ -2524,13 +2685,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   deleteTinyButton: {
-    borderRadius: 999,
-    paddingHorizontal: 14,
+    borderRadius: 10,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#C62821',
+    borderWidth: 1,
+    borderColor: '#C97C72',
+    backgroundColor: '#FFF8F6',
   },
   deleteTinyButtonText: {
-    color: '#FFF7F6',
+    color: '#9B332A',
     fontSize: 13,
     fontWeight: '800',
   },

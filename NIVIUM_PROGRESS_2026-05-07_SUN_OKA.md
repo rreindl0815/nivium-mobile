@@ -3,7 +3,7 @@ Prepared: May 7, 2026 (America/Vancouver)
 
 ## Sun-Oka Audio Regression
 - Canonical audio file:
-  - `/Users/robertreindl/Desktop/Sun-Oka Beach Park.m4a`
+  - `/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/Sun-Oka Beach Park.m4a`
 - Regression case file:
   - `/Users/robertreindl/Desktop/Skeena Profile App/mobile/scripts/transcribe-audio-sun-oka-regression-cases.json`
 - Synthetic formatter challenge:

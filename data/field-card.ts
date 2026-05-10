@@ -13,6 +13,7 @@ export const fieldCardSections: FieldSection[] = [
       { id: 'observer', label: 'Observer(s)', placeholder: 'Enter observer names' },
       { id: 'organization', label: 'Organization', placeholder: 'Enter organization' },
       { id: 'elevation', label: 'Elevation (m)', placeholder: 'Enter elevation', keyboardType: 'numeric' },
+      { id: 'lat_long', label: 'Lat / Long', placeholder: 'Enter latitude and longitude' },
       { id: 'aspect', label: 'Aspect', placeholder: 'Choose aspect', options: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'] },
       { id: 'slope_angle', label: 'Slope Angle (degrees)', placeholder: 'Enter slope angle', keyboardType: 'numeric' },
       { id: 'air_temperature', label: 'Air Temperature (°C)', placeholder: 'Enter air temperature', keyboardType: 'numeric' },
@@ -23,7 +24,6 @@ export const fieldCardSections: FieldSection[] = [
       { id: 'surface_grain', label: 'Surface Grain', placeholder: 'Choose surface grain', options: ['PP', 'DF', 'RG', 'FC', 'SH', 'DH', 'MF'] },
       { id: 'foot_pen', label: 'Foot Pen (cm)', placeholder: 'Enter foot pen', keyboardType: 'numeric' },
       { id: 'ski_pen', label: 'Ski Pen (cm)', placeholder: 'Enter ski pen', keyboardType: 'numeric' },
-      { id: 'lat_long', label: 'Lat / Long', placeholder: 'Enter latitude and longitude', keyboardType: 'numeric' },
     ],
   },
   {

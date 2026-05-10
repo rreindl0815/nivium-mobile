@@ -12,7 +12,6 @@ const metadataLines = [
   'Run Name / Location __________',
   'Observer(s) __________',
   'Organization __________',
-  'Elevation _____ m',
   'Aspect __________',
   'Slope Angle _____ degrees',
   'Air Temperature _____ C',
@@ -24,7 +23,6 @@ const metadataLines = [
   'Surface Grain __________',
   'Foot Pen _____ cm',
   'Ski Pen _____ cm',
-  'Lat / Long __________',
 ];
 
 const layerLines = [
@@ -36,8 +34,8 @@ const layerLines = [
   '',
   'Hardness 2 __________________ (optional)',
   'Grain Form ___________________ (optional)',
-  'Grain Form 2 _________________ (optional)',
   'Grain Size ___________________ (optional)',
+  'Grain Form 2 _________________ (optional)',
   'Grain Size 2 _________________ (optional)',
   'Layer Comments ______________ (optional)',
   'Make this layer red. (optional)',

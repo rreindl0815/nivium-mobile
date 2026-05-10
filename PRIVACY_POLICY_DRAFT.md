@@ -14,6 +14,8 @@ Nivium may handle the following information that you provide while using the app
 - rendered profile content
 - profile metadata such as run name, observer, date, location, weather, and snow conditions
 
+If you choose to use a current-location helper in the app, Nivium may also request access to your device's foreground location in order to fill Lat / Long and Elevation fields for the active profile.
+
 Nivium may also store generated app files on your device, including:
 - saved profiles
 - rendered PDF files
@@ -26,6 +28,7 @@ Nivium uses this information to:
 - generate rendered snow profile outputs
 - save profiles to your device archive
 - support sharing and export features you choose to use
+- fill Lat / Long and Elevation when you choose to use current location
 - operate, maintain, and improve the app
 
 ## Voice Notes and Formatting

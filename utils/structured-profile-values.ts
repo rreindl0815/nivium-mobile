@@ -4,6 +4,8 @@ const LAYER_GRAIN_CODES = new Set(['PP', 'DF', 'RG', 'FC', 'FCxr', 'SH', 'DH', '
 const LAYER_HARDNESS_CODES = new Set(['F', 'F+', '4F', '4F+', '1F', '1F+', 'P', 'P+', 'K', 'K+', 'I']);
 const STABILITY_TYPES = new Set(['CT', 'SS', 'HS', 'ECT', 'PST', 'RB']);
 const STABILITY_CHARACTERS = new Set(['SC', 'SP', 'PC', 'RP', 'BRK']);
+const LAYER_STRUCTURED_VALUE_PATTERN =
+  /^(?:layer_\d+_(?:top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)|layer_count)$/;
 
 function setIfMissing(target: Record<string, string>, key: string, value: string | undefined) {
   const clean = value?.trim() ?? '';
@@ -203,6 +205,20 @@ function extractLegacyHardnessTokens(token: string) {
   return [];
 }
 
+function normalizeLegacyHardnessTokens(grainTokens: string[], hardnessTokens: string[]) {
+  const crustGrainPresent = grainTokens.some((token) => token === 'IFrc' || token === 'MFcr');
+  if (!crustGrainPresent || hardnessTokens.length < 2) {
+    return hardnessTokens;
+  }
+
+  const first = hardnessTokens[0];
+  if (!first || !hardnessTokens.every((token) => token === first)) {
+    return hardnessTokens;
+  }
+
+  return [first];
+}
+
 function parseLegacyLayerLine(line: string) {
   const match = line.trim().match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)\s+(.+)$/);
   if (!match) {
@@ -230,7 +246,10 @@ function parseLegacyLayerLine(line: string) {
     .flatMap((token) => token.split('/').map((part) => normalizeGrainToken(part)))
     .filter(Boolean)
     .filter((token) => LAYER_GRAIN_CODES.has(token));
-  const hardnessTokens = tokens.flatMap((token) => extractLegacyHardnessTokens(token));
+  const hardnessTokens = normalizeLegacyHardnessTokens(
+    grainTokens,
+    tokens.flatMap((token) => extractLegacyHardnessTokens(token))
+  );
   const sizeTokens = tokens.flatMap((token) => extractSizeTokens(token));
   const used = new Set([
     ...tokens.filter((token) => token.toLowerCase() === 'crust'),
@@ -372,9 +391,16 @@ function parseStabilityLine(line: string) {
   return test;
 }
 
-function seedStructuredValuesFromSource(target: Record<string, string>, sourceValues: Record<string, string>) {
+function seedStructuredValuesFromSource(
+  target: Record<string, string>,
+  sourceValues: Record<string, string>,
+  options: { skipLayerFields?: boolean } = {}
+) {
   Object.entries(sourceValues).forEach(([key, value]) => {
     if (!value?.trim()) {
+      return;
+    }
+    if (options.skipLayerFields && LAYER_STRUCTURED_VALUE_PATTERN.test(key)) {
       return;
     }
     if (
@@ -392,9 +418,10 @@ export function hydrateStructuredValuesFromFormattedText(
   sourceValues: Record<string, string> = {}
 ) {
   const hydrated: Record<string, string> = {};
-  seedStructuredValuesFromSource(hydrated, sourceValues);
-
   const parsed = formattedText.trim() ? parseFormattedProfile(formattedText) : null;
+  const hasParsedLayers = (parsed?.layers.length ?? 0) > 0;
+  seedStructuredValuesFromSource(hydrated, sourceValues, { skipLayerFields: hasParsedLayers });
+
   if (parsed) {
     parsed.layers.slice(0, 12).forEach((line, index) => {
       const parsedLayer = parseLegacyLayerLine(line);

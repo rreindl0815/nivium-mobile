@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AUDIO_PATH="${1:-/Users/robertreindl/Desktop/nivium-test.m4a}"
+AUDIO_PATH="${1:-/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/nivium-test.m4a}"
 RUNS="${2:-5}"
 ENDPOINT="${3:-https://api.nivium.ca/transcribe-format}"
 REPORT_DIR="${4:-/tmp/nivium-audio-regression}"
@@ -22,4 +22,3 @@ python3 ./scripts/check-transcribe-audio.py \
   --endpoint "${ENDPOINT}" \
   --runs "${RUNS}" \
   --strict-identical | tee "${REPORT_FILE}"
-

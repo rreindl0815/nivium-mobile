@@ -3,11 +3,14 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 
 import { fieldCardSections } from '@/data/field-card';
 
+const voiceNotesHiddenMetadataFields = new Set(['elevation', 'lat_long']);
+
 const guideLines: Record<string, string[]> = {
   metadata: [
     'Say the date and time first.',
     'State run name or location, observer, and organization.',
-    'Give elevation, aspect, slope angle, and lat / long.',
+    'Give aspect and slope angle.',
+    'Add elevation and lat / long later in Profile Review if needed.',
     'Finish with air temperature, sky, precip, wind, total Hs, and surface grain.',
   ],
   layers: [
@@ -56,7 +59,9 @@ export default function FieldcardGuideScreen() {
                 </Text>
               ))}
               {section.id === 'metadata'
-                ? section.fields.map((field) => (
+                ? section.fields
+                    .filter((field) => !voiceNotesHiddenMetadataFields.has(field.id))
+                    .map((field) => (
                     <Text key={field.id} style={styles.fieldLine}>
                       {field.label}
                     </Text>

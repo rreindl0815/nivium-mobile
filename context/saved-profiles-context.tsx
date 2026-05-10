@@ -36,6 +36,8 @@ const LAYER_GRAIN_CODES = new Set(['PP', 'DF', 'RG', 'FC', 'FCxr', 'SH', 'DH', '
 const LAYER_HARDNESS_CODES = new Set(['F', 'F+', '4F', '4F+', '1F', '1F+', 'P', 'P+', 'K', 'K+', 'I']);
 const STABILITY_TYPES = new Set(['CT', 'SS', 'HS', 'ECT', 'PST', 'RB']);
 const STABILITY_CHARACTERS = new Set(['SC', 'SP', 'PC', 'RP', 'BRK']);
+const LAYER_STRUCTURED_VALUE_PATTERN =
+  /^(?:layer_\d+_(?:top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)|layer_count)$/;
 
 function setIfMissing(target: Record<string, string>, key: string, value: string | undefined) {
   const clean = value?.trim() ?? '';
@@ -238,6 +240,20 @@ function extractLegacyHardnessTokens(token: string) {
   return [];
 }
 
+function normalizeLegacyHardnessTokens(grainTokens: string[], hardnessTokens: string[]) {
+  const crustGrainPresent = grainTokens.some((token) => token === 'IFrc' || token === 'MFcr');
+  if (!crustGrainPresent || hardnessTokens.length < 2) {
+    return hardnessTokens;
+  }
+
+  const first = hardnessTokens[0];
+  if (!first || !hardnessTokens.every((token) => token === first)) {
+    return hardnessTokens;
+  }
+
+  return [first];
+}
+
 function parseLegacyLayerLine(line: string) {
   const match = line.trim().match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)\s+(.+)$/);
   if (!match) {
@@ -265,7 +281,10 @@ function parseLegacyLayerLine(line: string) {
     .flatMap((token) => token.split('/').map((part) => normalizeGrainToken(part)))
     .filter(Boolean)
     .filter((token) => LAYER_GRAIN_CODES.has(token));
-  const hardnessTokens = tokens.flatMap((token) => extractLegacyHardnessTokens(token));
+  const hardnessTokens = normalizeLegacyHardnessTokens(
+    grainTokens,
+    tokens.flatMap((token) => extractLegacyHardnessTokens(token))
+  );
   const sizeTokens = tokens.flatMap((token) => extractSizeTokens(token));
   const used = new Set([
     ...tokens.filter((token) => token.toLowerCase() === 'crust'),
@@ -536,7 +555,7 @@ function hydrateManualValuesForEdit(profile: SavedProfile) {
     // Parsed layer lines are the source of truth when reopening MED.
     // Do not let stale structured layer fragments from older sourceValues
     // overwrite or re-introduce drift (for example hardness_2 "P" leakage).
-    if (parsed && /^layer_\d+_(top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)$/.test(key)) {
+    if (parsed && LAYER_STRUCTURED_VALUE_PATTERN.test(key)) {
       return;
     }
     setIfMissing(hydrated, key, value);

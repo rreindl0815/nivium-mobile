@@ -357,7 +357,7 @@ function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
     if (!type && !result && !taps && !character && !depth && !pstCut && !pstColumn) {
       continue;
     }
-    if (!type || !result || ((type !== 'ECT' || result !== 'ECTX') && !depth)) {
+    if (!type || !result || !depth) {
       continue;
     }
 
@@ -371,11 +371,8 @@ function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
     }
 
     if (type === 'ECT') {
-      if (result === 'ECTX') {
-        lines.push('ECTX');
-        continue;
-      }
-      lines.push([`${result}${taps}`.trim(), character, `at ${depth} cm`].filter(Boolean).join(' '));
+      const ectCode = result === 'ECTX' ? result : `${result}${taps}`.trim();
+      lines.push([ectCode, character, `at ${depth} cm`].filter(Boolean).join(' '));
       continue;
     }
 
@@ -437,7 +434,11 @@ function normalizeAspect(value: string) {
 }
 
 function normalizeLatLong(value: string) {
-  return value.replace(/,\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  return value
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .replace(/,\s+/g, ', ')
+    .trim();
 }
 
 function applySuffix(value: string, suffix?: string) {

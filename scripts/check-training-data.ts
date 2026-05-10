@@ -11,10 +11,22 @@ type TrainingCase = {
   expected: string;
 };
 
-const ZIP_PATH = '/Users/robertreindl/Desktop/skeena_formatter_training_data.txt.zip';
+const TXT_PATH =
+  '/Users/robertreindl/Desktop/Nivium Workspace/04 Formatter References/skeena_formatter_training_data.txt';
+const ZIP_PATH =
+  '/Users/robertreindl/Desktop/Nivium Workspace/04 Formatter References/skeena_formatter_training_data.txt.zip';
 const RTF_NAME = 'skeena_formatter_training_data.txt.rtf';
 
 function loadTrainingCases(): TrainingCase[] {
+  if (fs.existsSync(TXT_PATH)) {
+    const raw = fs.readFileSync(TXT_PATH, 'utf8');
+    if (raw.startsWith('{\\rtf')) {
+      const txt = execFileSync('textutil', ['-convert', 'txt', '-stdout', TXT_PATH], { encoding: 'utf8' });
+      return parseTrainingCases(txt);
+    }
+    return parseTrainingCases(raw);
+  }
+
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skeena-training-'));
   try {
     const rtfPath = path.join(tmpDir, RTF_NAME);

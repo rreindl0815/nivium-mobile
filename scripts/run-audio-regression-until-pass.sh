@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AUDIO_PATH="${1:-/Users/robertreindl/Desktop/nivium-test.m4a}"
+AUDIO_PATH="${1:-/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/nivium-test.m4a}"
 RUNS_PER_CYCLE="${2:-25}"
 MAX_CYCLES="${3:-40}"
 ENDPOINT="${4:-https://api.nivium.ca/transcribe-format}"
@@ -37,4 +37,3 @@ done
 
 echo "Reached max cycles without pass."
 exit 1
-
