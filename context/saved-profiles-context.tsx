@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 import { useProfileDraft } from '@/context/profile-draft-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
@@ -10,6 +10,9 @@ import { isPlotRenderServiceConfigured } from '@/utils/plot-render-service';
 import { getMetadataValue, parseFormattedProfile } from '@/utils/profile-document';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 import { createRenderedProfileDocumentAsync, PlotRenderError } from '@/utils/profile-renderer';
+import { hydrateStructuredValuesFromFormattedText } from '@/utils/structured-profile-values';
+import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
+import { deleteQueuedVoiceNoteAsync, persistQueuedVoiceNoteAsync } from '@/utils/voice-note-storage';
 import type { SavedProfile, VoiceNoteSession } from '@/types/profile';
 
 const STORAGE_KEY = 'skeena-saved-profiles';
@@ -23,6 +26,18 @@ type SavedProfilesContextValue = {
     editingProfileId?: string | null
   ) => Promise<SavedProfile | null>;
   createProfileFromVoiceSession: (session: VoiceNoteSession) => Promise<SavedProfile | null>;
+  queueVoiceNoteRecording: (audioUri: string, sourceValues?: Record<string, string>) => Promise<SavedProfile | null>;
+  finalizePendingVoiceNoteProcessing: (
+    profileId: string,
+    input: {
+      transcriptRaw?: string;
+      engineText?: string;
+      resolvedValues?: Record<string, string>;
+      warnings?: string[];
+      audioUri?: string;
+    }
+  ) => Promise<SavedProfile | null>;
+  retryPendingVoiceProcessing: (profileId: string) => Promise<{ profile: SavedProfile | null; error?: string }>;
   ensureProfilePdf: (profileId: string) => Promise<{ uri: string | null; error?: string }>;
   reopenProfileForEditing: (profileId: string) => Promise<'manual' | 'raw-notes' | null>;
   deleteProfile: (profileId: string) => Promise<void>;
@@ -598,10 +613,16 @@ function buildProfileDisplayMetadata(profile: SavedProfile) {
   const runName = sourceValues.run_name?.trim() || (parsed ? getMetadataValue(parsed, 'Run Name').trim() : '');
   const date = sourceValues.date?.trim() || (parsed ? getMetadataValue(parsed, 'Date').trim() : '');
   const observer = sourceValues.observer?.trim() || (parsed ? getMetadataValue(parsed, 'Observer').trim() : '');
+  const pendingVoiceSubtitle = profile.pendingMessage?.trim() || 'Waiting for connection to process saved audio.';
 
   return {
-    title: runName || 'Untitled Run',
-    subtitle: `${date || 'Date missing'} · ${observer || 'Observer missing'}`,
+    title: runName || (profile.pendingAction === 'process-voice-audio' ? 'Voice Notes Pending' : 'Untitled Run'),
+    subtitle:
+      date || observer
+        ? `${date || 'Date missing'} · ${observer || 'Observer missing'}`
+        : profile.pendingAction === 'process-voice-audio'
+          ? pendingVoiceSubtitle
+          : 'Date missing · Observer missing',
   };
 }
 
@@ -618,6 +639,8 @@ function normalizeSavedProfile(profile: SavedProfile): SavedProfile {
         ? profile.formattedText
         : undefined),
     formatterWarnings: profile.formatterWarnings ?? [],
+    pendingAction: profile.pendingAction ?? undefined,
+    pendingMessage: profile.pendingMessage?.trim() || undefined,
   };
 
   if (
@@ -625,11 +648,70 @@ function normalizeSavedProfile(profile: SavedProfile): SavedProfile {
     profile.subtitle === nextProfile.subtitle &&
     profile.transcriptRaw === nextProfile.transcriptRaw &&
     profile.engineTextOriginal === nextProfile.engineTextOriginal &&
-    profile.formatterWarnings === nextProfile.formatterWarnings
+    profile.formatterWarnings === nextProfile.formatterWarnings &&
+    profile.pendingAction === nextProfile.pendingAction &&
+    profile.pendingMessage === nextProfile.pendingMessage
   ) {
     return profile;
   }
   return nextProfile;
+}
+
+function buildPendingVoiceNoteProfile(profileId: string, audioUri: string, sourceValues?: Record<string, string>) {
+  return normalizeSavedProfile({
+    id: profileId,
+    title: 'Voice Notes Pending',
+    subtitle: 'Waiting for connection to process saved audio.',
+    createdAt: new Date().toISOString(),
+    formattedText: '',
+    rawNotes: '',
+    transcriptRaw: '',
+    sourceValues: sanitizeManualValues(sourceValues ?? {}),
+    sourceKind: 'raw-notes',
+    engineTextOriginal: '',
+    formatterWarnings: [],
+    audioUri,
+    pendingAction: 'process-voice-audio',
+    pendingMessage: 'Voice recording is saved in Archive locally. Retry processing when you have service again.',
+  });
+}
+
+function buildProcessedVoiceNoteProfile(
+  profile: SavedProfile,
+  input: {
+    transcriptRaw?: string;
+    engineText?: string;
+    resolvedValues?: Record<string, string>;
+    warnings?: string[];
+    audioUri?: string;
+  }
+) {
+  const transcriptRaw = input.transcriptRaw?.trim() ?? '';
+  const engineText = input.engineText?.trim() ?? '';
+  const seededValues = sanitizeManualValues(
+    {
+      ...hydrateStructuredValuesFromFormattedText(engineText || transcriptRaw, input.resolvedValues ?? {}),
+      ...(profile.sourceValues ?? {}),
+    }
+  );
+  const formatterWarnings = Array.from(new Set([...(input.warnings ?? []), ...(profile.formatterWarnings ?? [])]));
+
+  return normalizeSavedProfile({
+    ...profile,
+    title: buildProfileTitle(seededValues),
+    subtitle: buildProfileSubtitle(seededValues),
+    formattedText: engineText || transcriptRaw,
+    rawNotes: transcriptRaw,
+    transcriptRaw,
+    sourceValues: seededValues,
+    sourceKind: 'raw-notes',
+    engineTextOriginal: engineText || transcriptRaw,
+    formatterWarnings,
+    audioUri: input.audioUri ?? profile.audioUri,
+    renderError: undefined,
+    pendingAction: undefined,
+    pendingMessage: undefined,
+  });
 }
 
 function buildResolvedDraftValues(rawNotes: string, values: Record<string, string>) {
@@ -748,6 +830,11 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
   const [profiles, setProfiles] = useState<SavedProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const profilesRef = useRef<SavedProfile[]>([]);
+
+  useEffect(() => {
+    profilesRef.current = profiles;
+  }, [profiles]);
 
   useEffect(() => {
     let isMounted = true;
@@ -760,6 +847,7 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         }
         const parsed = (JSON.parse(stored) as SavedProfile[]).map(normalizeSavedProfile);
         if (isMounted) {
+          profilesRef.current = parsed;
           setProfiles(parsed);
           if (parsed[0]) {
             setSelectedProfileId(parsed[0].id);
@@ -781,14 +869,94 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const persist = async (nextProfiles: SavedProfile[]) => {
+    profilesRef.current = nextProfiles;
     setProfiles(nextProfiles);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextProfiles));
+  };
+
+  const queueVoiceNoteRecording = async (audioUri: string, sourceValues?: Record<string, string>) => {
+    const profileId = `${Date.now()}`;
+    const storedAudioUri = await persistQueuedVoiceNoteAsync(profileId, audioUri);
+    const queuedProfile = buildPendingVoiceNoteProfile(profileId, storedAudioUri, sourceValues);
+    const nextProfiles = [queuedProfile, ...profilesRef.current];
+    await persist(nextProfiles);
+    setSelectedProfileId(queuedProfile.id);
+    return queuedProfile;
+  };
+
+  const finalizePendingVoiceNoteProcessing = async (
+    profileId: string,
+    input: {
+      transcriptRaw?: string;
+      engineText?: string;
+      resolvedValues?: Record<string, string>;
+      warnings?: string[];
+      audioUri?: string;
+    }
+  ) => {
+    const activeProfiles = profilesRef.current;
+    const profile = activeProfiles.find((entry) => entry.id === profileId);
+    if (!profile) {
+      return null;
+    }
+
+    const finalizedProfile = buildProcessedVoiceNoteProfile(profile, input);
+    const nextProfiles = activeProfiles.map((entry) => (entry.id === profileId ? finalizedProfile : entry));
+    await persist(nextProfiles);
+    setSelectedProfileId(finalizedProfile.id);
+    return finalizedProfile;
+  };
+
+  const retryPendingVoiceProcessing = async (profileId: string) => {
+    const activeProfiles = profilesRef.current;
+    const profile = activeProfiles.find((entry) => entry.id === profileId);
+    if (!profile) {
+      return { profile: null, error: 'Profile not found.' };
+    }
+    if (!profile.audioUri) {
+      return { profile: null, error: 'Saved voice recording is unavailable for retry.' };
+    }
+
+    try {
+      const response = await transcribeAudioFromServiceAsync({
+        audioUri: profile.audioUri,
+        source: 'raw-notes-audio',
+        formatterVersion: 'nivium-ai-v1',
+      });
+      const finalizedProfile = await finalizePendingVoiceNoteProcessing(profileId, {
+        transcriptRaw: response.transcript,
+        engineText: response.formattedText,
+        resolvedValues: response.resolvedValues,
+        warnings: response.warnings,
+        audioUri: profile.audioUri,
+      });
+      if (!finalizedProfile) {
+        return { profile: null, error: 'Profile not found after voice-note retry.' };
+      }
+      loadFromSavedProfile(finalizedProfile);
+      return { profile: finalizedProfile };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Voice-note processing failed.';
+      const updatedProfile = normalizeSavedProfile({
+        ...profile,
+        renderError: message,
+        pendingAction: 'process-voice-audio',
+        pendingMessage: 'Voice recording is still saved in Archive locally. Retry processing when you have service again.',
+      });
+      const nextProfiles = activeProfiles.map((entry) => (entry.id === profileId ? updatedProfile : entry));
+      await persist(nextProfiles);
+      setSelectedProfileId(updatedProfile.id);
+      return { profile: updatedProfile, error: message };
+    }
   };
 
   const ensureProfilePdf = async (profileId: string) => {
     const profile = profiles.find((entry) => entry.id === profileId);
     if (!profile) {
       return { uri: null, error: 'Profile not found.' };
+    }
+    if (profile.pendingAction === 'process-voice-audio') {
+      return { uri: null, error: 'This saved recording still needs voice processing before it can be rendered.' };
     }
     const shouldUpgradeReportToPlot = profile.documentKind !== 'plot' && isPlotRenderServiceConfigured();
     if (profile.pdfUri && !shouldUpgradeReportToPlot) {
@@ -809,15 +977,19 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         previewImageUri: pdf.previewImageUri ?? profile.previewImageUri,
         documentKind: pdf.documentKind,
         renderError: undefined,
+        pendingAction: undefined,
+        pendingMessage: undefined,
       };
       const nextProfiles = profiles.map((entry) => (entry.id === profileId ? updatedProfile : entry));
       await persist(nextProfiles);
       return { uri: pdf.uri };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown renderer error.';
-      const updatedProfile = {
+      const updatedProfile: SavedProfile = {
         ...profile,
         renderError: message,
+        pendingAction: 'render-profile',
+        pendingMessage: 'Formatted profile data is saved in Archive locally. Retry render when you have service again.',
       };
       const nextProfiles = profiles.map((entry) => (entry.id === profileId ? updatedProfile : entry));
       await persist(nextProfiles);
@@ -881,6 +1053,8 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         (persistedSourceKind === 'raw-notes' ? editingProfile?.formattedText ?? formattedText : undefined),
       formatterWarnings: editingProfile?.formatterWarnings ?? [],
       audioUri: editingProfile?.audioUri,
+      pendingAction: undefined,
+      pendingMessage: undefined,
     };
 
     if (!formattedText.trim()) {
@@ -891,6 +1065,8 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
           (effectiveSourceKind === 'raw-notes'
             ? 'Formatter could not produce engine-ready text from these raw notes.'
             : 'Formatter could not produce engine-ready text.'),
+        pendingAction: undefined,
+        pendingMessage: undefined,
       };
       const nextProfiles = editingProfile
         ? profiles.map((entry) => (entry.id === editingProfile.id ? storedProfile : entry))
@@ -925,6 +1101,11 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         ...newProfile,
         formattedText: newProfile.formattedText,
         renderError: rawNotesFormatterError || (error instanceof Error ? error.message : 'Unknown formatter or renderer error.'),
+        pendingAction: newProfile.formattedText.trim() && effectiveSourceKind === 'raw-notes' ? 'render-profile' : undefined,
+        pendingMessage:
+          newProfile.formattedText.trim() && effectiveSourceKind === 'raw-notes'
+            ? 'Formatted profile data is saved in Archive locally. Retry render when you have service again.'
+            : undefined,
       };
     }
 
@@ -968,12 +1149,16 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
     const newProfile: SavedProfile = {
       ...baseProfile,
       sourceValues: reviewValues,
+      pendingAction: undefined,
+      pendingMessage: undefined,
     };
 
     if (!formattedText) {
       const storedProfile: SavedProfile = {
         ...newProfile,
         renderError: 'No engine-ready text is available for render.',
+        pendingAction: undefined,
+        pendingMessage: undefined,
       };
       const nextProfiles = editingProfile
         ? profiles.map((entry) => (entry.id === editingProfile.id ? storedProfile : entry))
@@ -1001,6 +1186,8 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
       storedProfile = {
         ...newProfile,
         renderError: error.message || 'Unknown renderer error.',
+        pendingAction: 'render-profile',
+        pendingMessage: 'Formatted profile data is saved in Archive locally. Retry render when you have service again.',
       };
     }
 
@@ -1046,6 +1233,7 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         // Ignore cleanup errors so profile deletion still succeeds.
       }
     }
+    await deleteQueuedVoiceNoteAsync(profileToDelete?.audioUri);
 
     const nextProfiles = profiles.filter((profile) => profile.id !== profileId);
     await persist(nextProfiles);
@@ -1064,6 +1252,7 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
     await Promise.all(
       profilesToDelete.map(async (profile) => {
         if (!profile.pdfUri) {
+          await deleteQueuedVoiceNoteAsync(profile.audioUri);
           return;
         }
         try {
@@ -1071,6 +1260,7 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         } catch {
           // Ignore cleanup errors so archive cleanup still succeeds.
         }
+        await deleteQueuedVoiceNoteAsync(profile.audioUri);
       })
     );
 
@@ -1089,6 +1279,9 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
         isLoaded,
         createProfileFromDraft,
         createProfileFromVoiceSession,
+        queueVoiceNoteRecording,
+        finalizePendingVoiceNoteProcessing,
+        retryPendingVoiceProcessing,
         ensureProfilePdf,
         reopenProfileForEditing,
         deleteProfile,

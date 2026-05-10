@@ -3,8 +3,11 @@ import { useRouter } from 'expo-router';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import type { CurrentLocationStatus } from '@/components/profile-editor/editor-types';
 import { useAppAccess } from '@/context/app-access-context';
+import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
+import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
 import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
 const metadataLines = [
   'Date __________',
@@ -72,16 +75,43 @@ const stabilityBlocks = [
 
 const extraNotesLines = ['____________________'];
 
+function getFieldcardSectionTitle(sectionId: 'metadata' | 'layers' | 'temperature' | 'stability' | 'notes') {
+  switch (sectionId) {
+    case 'metadata':
+      return 'Observation Details';
+    default:
+      return '';
+  }
+}
+
+function buildFieldLocationValues(values: Record<string, string>) {
+  const next: Record<string, string> = {};
+  const latLong = values.lat_long?.trim() ?? '';
+  const elevation = values.elevation?.trim() ?? '';
+  if (latLong) {
+    next.lat_long = latLong;
+  }
+  if (elevation) {
+    next.elevation = elevation;
+  }
+  return next;
+}
+
 export default function RecordNotesScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
-  const { session, clearSession, setFromFormatterResult } = useVoiceNoteSession();
+  const { session, clearSession, setFromFormatterResult, replaceReviewValues } = useVoiceNoteSession();
+  const { queueVoiceNoteRecording, finalizePendingVoiceNoteProcessing } = useSavedProfiles();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [isSavingFieldLocation, setIsSavingFieldLocation] = useState(false);
+  const [fieldLocationStatus, setFieldLocationStatus] = useState<CurrentLocationStatus | null>(null);
   const compact = true;
-  const hasReviewReady = session.engineTextCurrent.trim().length > 0;
+  const hasSavedFieldLocation = Boolean(session.reviewValues.lat_long?.trim() || session.reviewValues.elevation?.trim());
+  const hasCapturedVoiceNotes = session.transcriptRaw.trim().length > 0;
+  const hasReviewReady = hasCapturedVoiceNotes || Boolean(session.profileId && session.engineTextCurrent.trim().length > 0);
   const canOpenReview = !recording && !isProcessingAudio && hasReviewReady;
 
   useEffect(() => {
@@ -153,6 +183,10 @@ export default function RecordNotesScreen() {
       return;
     }
 
+    let queuedProfileId: string | null = null;
+    let queuedAudioUri: string | null = null;
+    const preservedFieldLocationValues = buildFieldLocationValues(session.reviewValues);
+
     try {
       setIsProcessingAudio(true);
       await recording.stopAndUnloadAsync();
@@ -165,26 +199,90 @@ export default function RecordNotesScreen() {
         throw new Error('No audio URI was generated.');
       }
 
+      await clearSession();
+      const queuedProfile = await queueVoiceNoteRecording(audioUri, preservedFieldLocationValues);
+      if (!queuedProfile?.audioUri) {
+        throw new Error('Voice notes could not be saved locally.');
+      }
+      queuedProfileId = queuedProfile.id;
+      queuedAudioUri = queuedProfile.audioUri;
+
       const response = await transcribeAudioFromServiceAsync({
-        audioUri,
+        audioUri: queuedProfile.audioUri,
         source: 'raw-notes-audio',
         formatterVersion: 'nivium-ai-v1',
       });
-      setFromFormatterResult({
-        audioUri,
+      const finalizedProfile = await finalizePendingVoiceNoteProcessing(queuedProfile.id, {
         transcriptRaw: response.transcript,
         engineText: response.formattedText,
         resolvedValues: response.resolvedValues,
+        warnings: response.warnings,
+        audioUri: queuedProfile.audioUri,
+      });
+      setFromFormatterResult({
+        profileId: finalizedProfile?.id ?? queuedProfile.id,
+        audioUri: queuedProfile.audioUri,
+        transcriptRaw: response.transcript,
+        engineText: response.formattedText,
+        resolvedValues: finalizedProfile?.sourceValues ?? response.resolvedValues,
         warnings: response.warnings,
         formatterVersion: response.formatterVersion,
       });
       router.push('/voice-review');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Transcription failed.';
-      Alert.alert('Transcription Failed', message);
+      if (queuedProfileId && queuedAudioUri) {
+        Alert.alert(
+          'Voice Notes Saved',
+          `${message} Your recording was saved in Archive and can be retried once you have service again.`,
+          [
+            {
+              text: 'Open Saved Voice Notes',
+              onPress: () =>
+                router.replace({
+                  pathname: '/raw-notes-pending',
+                  params: { profileId: queuedProfileId },
+                }),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Transcription Failed', message);
+      }
     } finally {
       setIsProcessingAudio(false);
     }
+  };
+
+  const saveFieldLocation = () => {
+    void (async () => {
+      if (isSavingFieldLocation || hasSavedFieldLocation) {
+        return;
+      }
+
+      setIsSavingFieldLocation(true);
+      try {
+        const currentLocation = await resolveCurrentLocationValuesAsync();
+        replaceReviewValues({
+          ...session.reviewValues,
+          elevation: currentLocation.elevation,
+          lat_long: currentLocation.latLong,
+        });
+        setFieldLocationStatus({
+          tone: 'success',
+          message: currentLocation.hasElevation
+            ? 'Saved Lat / Long and Elevation for this voice note.'
+            : 'Saved Lat / Long for this voice note. Elevation was unavailable and can be entered manually later.',
+        });
+      } catch (error) {
+        setFieldLocationStatus({
+          tone: 'error',
+          message: getCurrentLocationErrorMessage(error),
+        });
+      } finally {
+        setIsSavingFieldLocation(false);
+      }
+    })();
   };
 
   const onRecordPress = () => {
@@ -241,6 +339,7 @@ export default function RecordNotesScreen() {
               </View>
               <Pressable
                 onPress={() => {
+                  setFieldLocationStatus(null);
                   void clearSession();
                 }}
                 style={({ pressed }) => [styles.clearButton, pressed ? styles.pressed : null]}>
@@ -256,11 +355,56 @@ export default function RecordNotesScreen() {
                 <Text style={styles.bulletGlyph}>•</Text>
                 <Text style={styles.instructionsLine}>Follow steps in the <Text style={styles.instructionsBold}>Fieldcard</Text>{'\n'}below</Text>
               </View>
-              {session.engineTextCurrent.trim() ? (
+              {hasCapturedVoiceNotes && session.engineTextCurrent.trim() ? (
                 <Text style={styles.liveNotesText}>{session.engineTextCurrent}</Text>
-              ) : session.transcriptRaw.trim() ? (
+              ) : hasCapturedVoiceNotes ? (
                 <Text style={styles.liveNotesText}>{session.transcriptRaw}</Text>
               ) : null}
+            </View>
+            <View style={styles.fieldLocationShell}>
+              {hasSavedFieldLocation ? (
+                <View style={styles.fieldLocationSavedCard}>
+                  <Text style={styles.fieldLocationSavedLabel}>Saved for this voice note</Text>
+                  {session.reviewValues.lat_long?.trim() ? (
+                    <Text style={styles.fieldLocationSavedValue}>Lat / Long: {session.reviewValues.lat_long.trim()}</Text>
+                  ) : null}
+                  {session.reviewValues.elevation?.trim() ? (
+                    <Text style={styles.fieldLocationSavedValue}>Elevation: {session.reviewValues.elevation.trim()} m</Text>
+                  ) : null}
+                  {fieldLocationStatus ? (
+                    <Text
+                      style={[
+                        styles.fieldLocationStatus,
+                        fieldLocationStatus.tone === 'error' ? styles.fieldLocationStatusError : styles.fieldLocationStatusSuccess,
+                      ]}>
+                      {fieldLocationStatus.message}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <Pressable
+                  onPress={saveFieldLocation}
+                  disabled={isSavingFieldLocation}
+                  style={({ pressed }) => [
+                    styles.recordButtonShell,
+                    styles.fieldLocationButtonShell,
+                    isSavingFieldLocation ? styles.fieldLocationButtonDisabled : null,
+                    pressed && !isSavingFieldLocation ? styles.pressed : null,
+                  ]}>
+                  <View style={styles.recordButtonFrame}>
+                    <View style={styles.recordButton}>
+                      {isSavingFieldLocation ? (
+                        <View style={styles.loadingRow}>
+                          <ActivityIndicator size="small" color="#FFF8EE" />
+                          <Text style={styles.recordButtonText}>Save Current Coordinates and Elevation</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.recordButtonText}>Save Current Coordinates and Elevation</Text>
+                      )}
+                    </View>
+                  </View>
+                </Pressable>
+              )}
             </View>
             <Pressable
               onPress={onRecordPress}
@@ -325,10 +469,12 @@ export default function RecordNotesScreen() {
 
 const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { compact: boolean }) {
   return (
-    <View style={styles.cardShell}>
-      <View style={styles.cardHighlight} />
-      <View style={styles.card}>
-        {compact ? null : (
+      <View style={styles.cardShell}>
+        <View style={styles.cardHighlight} />
+        <View style={styles.card}>
+        {compact ? (
+          <Text style={styles.compactFieldcardTitle}>Fieldcard</Text>
+        ) : (
           <>
             <View style={styles.cardAccent} />
             <Text style={styles.cardEyebrow}>Field Card</Text>
@@ -343,7 +489,7 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled">
           <View style={styles.guideSection}>
-            <Text style={styles.guideSectionTitle}>Metadata</Text>
+            <Text style={styles.guideSectionTitle}>{getFieldcardSectionTitle('metadata')}</Text>
             {metadataLines.map((line) => (
               <Text key={line} style={styles.fieldLine}>
                 {line}
@@ -570,6 +716,52 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '700',
+  },
+  compactFieldcardTitle: {
+    marginBottom: 12,
+    color: '#1F3443',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '800',
+  },
+  fieldLocationShell: {
+    marginTop: 14,
+    gap: 10,
+  },
+  fieldLocationButtonShell: {
+    marginTop: 0,
+  },
+  fieldLocationButtonDisabled: {
+    opacity: 0.72,
+  },
+  fieldLocationSavedCard: {
+    gap: 8,
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#D9E4EB',
+  },
+  fieldLocationSavedLabel: {
+    color: '#2F5D45',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  fieldLocationSavedValue: {
+    color: '#173248',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  fieldLocationStatus: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  fieldLocationStatusSuccess: {
+    color: '#2F5D45',
+  },
+  fieldLocationStatusError: {
+    color: '#9B332A',
   },
   recordButtonShell: {
     marginTop: 12,

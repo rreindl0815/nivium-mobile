@@ -539,6 +539,12 @@ def parse_dictation(text:str)->ProfileData:
     for l in lines:
         l2=re.sub(r'(\d),(?=\d{3}\b)', r'\1', l)
 
+        # Keep complete Lat/Long metadata lines intact so coordinate commas
+        # are never split away from the second coordinate.
+        if re.match(r'^\s*Lat\s*/?\s*Long\b', l2, flags=re.I):
+            tokens.append(l2.strip())
+            continue
+
         # Protect the comma between latitude and longitude so comma-splitting doesn't split coords
         # Example: 'lat, long 56°08\'19", -127°54\'38"' -> keep the coord comma intact.
         if re.search(r'\blat\b', l2, flags=re.I) and re.search(r'\b(long|lon)\b', l2, flags=re.I):

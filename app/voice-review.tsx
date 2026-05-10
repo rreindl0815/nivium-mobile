@@ -47,6 +47,7 @@ export default function VoiceReviewScreen() {
   const scrollViewRef = useRef<ScrollView | null>(null);
   const sectionOffsetsRef = useRef<Record<string, number>>({});
   const values = session.reviewValues;
+  const hasSavedFieldLocation = Boolean(values.lat_long?.trim() || values.elevation?.trim());
   const canRender = session.engineTextCurrent.trim().length > 0;
   const missingObservationCount = requiredFieldIds.filter((fieldId) => !(values[fieldId] ?? '').trim()).length;
   const layerWarningCount = countLayerWarnings(values);
@@ -232,6 +233,7 @@ export default function VoiceReviewScreen() {
                 onUseCurrentLocation={applyCurrentLocation}
                 isApplyingCurrentLocation={isApplyingCurrentLocation}
                 currentLocationStatus={currentLocationStatus}
+                showCurrentLocationHelper={!hasSavedFieldLocation}
               />
             </AccordionSection>
           </View>

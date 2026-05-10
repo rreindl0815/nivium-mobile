@@ -6,14 +6,20 @@ export function CurrentLocationHelper({
   isApplyingCurrentLocation,
   currentLocationStatus,
   onUseCurrentLocation,
+  title = 'Current Location',
+  buttonText = 'Use Current Location for Lat / Long and Elevation',
+  loadingText = 'Using Current Location...',
 }: {
   isApplyingCurrentLocation: boolean;
   currentLocationStatus: CurrentLocationStatus | null;
   onUseCurrentLocation: () => void;
+  title?: string;
+  buttonText?: string;
+  loadingText?: string;
 }) {
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Current Location</Text>
+      <Text style={styles.title}>{title}</Text>
       <Pressable
         onPress={onUseCurrentLocation}
         disabled={isApplyingCurrentLocation}
@@ -25,10 +31,10 @@ export function CurrentLocationHelper({
         {isApplyingCurrentLocation ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" color="#FFF8EE" />
-            <Text style={styles.buttonText}>Using Current Location...</Text>
+            <Text style={styles.buttonText}>{loadingText}</Text>
           </View>
         ) : (
-          <Text style={styles.buttonText}>Use Current Location for Lat / Long and Elevation</Text>
+          <Text style={styles.buttonText}>{buttonText}</Text>
         )}
       </Pressable>
       {currentLocationStatus ? (

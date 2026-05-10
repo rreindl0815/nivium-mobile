@@ -34,6 +34,8 @@ export type VoiceNoteSession = {
   updatedAt: string;
 };
 
+export type PendingProfileAction = 'process-voice-audio' | 'render-profile';
+
 export type SavedProfile = {
   id: string;
   title: string;
@@ -51,4 +53,6 @@ export type SavedProfile = {
   previewImageUri?: string;
   documentKind?: 'report' | 'plot';
   renderError?: string;
+  pendingAction?: PendingProfileAction;
+  pendingMessage?: string;
 };

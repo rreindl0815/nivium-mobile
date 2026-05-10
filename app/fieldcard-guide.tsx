@@ -5,12 +5,19 @@ import { fieldCardSections } from '@/data/field-card';
 
 const voiceNotesHiddenMetadataFields = new Set(['elevation', 'lat_long']);
 
+function getDisplaySectionTitle(sectionId: string, fallbackTitle: string) {
+  if (sectionId === 'metadata') {
+    return 'Observation Details';
+  }
+  return fallbackTitle;
+}
+
 const guideLines: Record<string, string[]> = {
   metadata: [
     'Say the date and time first.',
     'State run name or location, observer, and organization.',
     'Give aspect and slope angle.',
-    'Add elevation and lat / long later in Profile Review if needed.',
+    'Save elevation and lat / long from Field Location on the Voice Notes screen if needed.',
     'Finish with air temperature, sky, precip, wind, total Hs, and surface grain.',
   ],
   layers: [
@@ -40,7 +47,7 @@ export default function FieldcardGuideScreen() {
           <View style={styles.headerHighlight} />
           <View style={styles.headerCard}>
             <View style={styles.cardAccent} />
-            <Text style={styles.eyebrow}>Field Card</Text>
+            <Text style={styles.eyebrow}>Fieldcard</Text>
             <Text style={styles.title}>Follow Field Card for Voice Notes</Text>
             <Text style={styles.copy}>Use this as the spoken order while recording voice notes.</Text>
           </View>
@@ -51,7 +58,7 @@ export default function FieldcardGuideScreen() {
             <View style={styles.sectionHighlight} />
             <View style={styles.sectionCard}>
               <View style={styles.cardAccent} />
-              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <Text style={styles.sectionTitle}>{getDisplaySectionTitle(section.id, section.title)}</Text>
               <Text style={styles.sectionDescription}>{section.description}</Text>
               {guideLines[section.id]?.map((line) => (
                 <Text key={line} style={styles.bullet}>

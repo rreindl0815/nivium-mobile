@@ -1,17 +1,30 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useSavedProfiles } from '@/context/saved-profiles-context';
-import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 
 export default function RawNotesPendingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ profileId?: string }>();
-  const { profiles, selectedProfile, ensureProfilePdf, reopenProfileForEditing } = useSavedProfiles();
-  const { loadFromSavedProfile } = useVoiceNoteSession();
+  const { profiles, selectedProfile, ensureProfilePdf, retryPendingVoiceProcessing } = useSavedProfiles();
+  const [isRetrying, setIsRetrying] = useState(false);
   const explicitProfile = params.profileId ? profiles.find((profile) => profile.id === params.profileId) ?? null : null;
   const activeProfile = explicitProfile ?? selectedProfile;
-  const notePreview = activeProfile?.transcriptRaw?.trim() || activeProfile?.rawNotes?.trim() || 'No voice notes were saved on this profile.';
+  const isPendingVoiceProcessing = activeProfile?.pendingAction === 'process-voice-audio';
+  const isPendingRender = activeProfile?.pendingAction === 'render-profile';
+  const notePreview =
+    activeProfile?.transcriptRaw?.trim() ||
+    activeProfile?.rawNotes?.trim() ||
+    (isPendingVoiceProcessing ? 'Audio recording saved locally. Retry processing when you have service again.' : 'No voice notes were saved on this profile.');
+  const sectionLabel = isPendingVoiceProcessing ? 'Waiting To Process Voice Notes' : isPendingRender ? 'Waiting To Render' : 'Waiting To Format';
+  const statusCopy = isPendingVoiceProcessing
+    ? 'Your voice recording is saved in Archive on this device. Once the app has a working data or Wi-Fi connection again, retry processing to continue into Profile Review. If you leave the app now, reopen Nivium and go to Archive to find this saved recording.'
+    : isPendingRender
+      ? 'Your structured profile data is already saved in Archive on this device. Once the app has a working data or Wi-Fi connection again, retry render to create the final plotted profile. If you leave the app now, reopen Nivium and go to Archive to find this saved profile.'
+      : 'Your voice notes are saved on the device. The final plotted profile can be formatted and rendered when the app has a working data or Wi-Fi connection again.';
+  const primaryActionLabel = isPendingVoiceProcessing ? 'Retry Processing' : isPendingRender ? 'Retry Render' : 'Try Again';
+  const statusDetail = activeProfile?.pendingMessage?.trim() || activeProfile?.renderError?.trim() || '';
 
   const handleRetry = () => {
     if (!activeProfile) {
@@ -19,43 +32,39 @@ export default function RawNotesPendingScreen() {
     }
 
     void (async () => {
-      const renderResult = await ensureProfilePdf(activeProfile.id);
-      if (renderResult.uri) {
-        router.replace({
-          pathname: '/rendered-profile',
-          params: { profileId: activeProfile.id },
-        });
-        return;
-      }
+      try {
+        setIsRetrying(true);
+        if (activeProfile.pendingAction === 'process-voice-audio') {
+          const retryResult = await retryPendingVoiceProcessing(activeProfile.id);
+          if (retryResult.profile && !retryResult.error) {
+            router.replace('/voice-review');
+            return;
+          }
 
-      Alert.alert(
-        'Still Waiting On Connection',
-        renderResult.error ||
-          'Voice notes were saved, but formatting and rendering still need a connection before the final plotted profile can be created.'
-      );
-    })();
-  };
+          Alert.alert(
+            'Still Waiting On Connection',
+            retryResult.error || 'Your recording is still saved locally and can be retried once service returns.'
+          );
+          return;
+        }
 
-  const handleEdit = () => {
-    if (!activeProfile) {
-      return;
-    }
+        const renderResult = await ensureProfilePdf(activeProfile.id);
+        if (renderResult.uri) {
+          router.replace({
+            pathname: '/rendered-profile',
+            params: { profileId: activeProfile.id },
+          });
+          return;
+        }
 
-    void (async () => {
-      const mode = await reopenProfileForEditing(activeProfile.id);
-      if (mode === 'raw-notes' && activeProfile.formattedText.trim()) {
-        loadFromSavedProfile(activeProfile);
-        router.replace('/voice-review');
-        return;
+        Alert.alert(
+          'Still Waiting On Connection',
+          renderResult.error ||
+            'Voice notes were saved, but formatting and rendering still need a connection before the final plotted profile can be created.'
+        );
+      } finally {
+        setIsRetrying(false);
       }
-      if (mode === 'raw-notes') {
-        router.replace('/record-notes');
-        return;
-      }
-      router.replace({
-        pathname: '/manual-entry',
-        params: { editProfileId: activeProfile.id },
-      });
     })();
   };
 
@@ -75,13 +84,10 @@ export default function RawNotesPendingScreen() {
           <View style={styles.cardHighlight} />
           <View style={styles.statusPanel}>
             <View style={styles.cardAccent} />
-            <Text style={styles.sectionLabel}>Waiting To Format</Text>
+            <Text style={styles.sectionLabel}>{sectionLabel}</Text>
             <Text style={styles.statusTitle}>{activeProfile?.title || 'Voice notes saved'}</Text>
-            <Text style={styles.statusCopy}>
-              Your voice notes are saved on the device. The final plotted profile can be formatted and rendered when the app has a
-              working data or Wi-Fi connection again.
-            </Text>
-            {activeProfile?.renderError ? <Text style={styles.errorCopy}>Current renderer message: {activeProfile.renderError}</Text> : null}
+            <Text style={styles.statusCopy}>{statusCopy}</Text>
+            {statusDetail ? <Text style={styles.errorCopy}>Current status: {statusDetail}</Text> : null}
           </View>
         </View>
 
@@ -100,23 +106,23 @@ export default function RawNotesPendingScreen() {
             <View style={styles.cardAccent} />
             <Text style={styles.sectionLabel}>Next Step</Text>
             <View style={styles.actionStack}>
-              <Pressable onPress={handleRetry} style={styles.primaryActionShell}>
+              <Pressable disabled={!activeProfile || isRetrying} onPress={handleRetry} style={[styles.primaryActionShell, !activeProfile || isRetrying ? styles.primaryActionDisabled : null]}>
                 <View style={styles.primaryActionHighlight} />
-                <View style={styles.primaryActionFrame}>
-                  <View style={styles.primaryAction}>
-                    <Text style={styles.primaryActionText}>Try Again</Text>
-                  </View>
-                </View>
-              </Pressable>
-
-              <View style={styles.actionRow}>
-                <Pressable onPress={handleEdit} style={styles.secondaryActionShell}>
-                  <View style={styles.secondaryActionFrame}>
-                    <View style={styles.secondaryAction}>
-                      <Text style={styles.secondaryActionText}>Edit Notes</Text>
+                  <View style={styles.primaryActionFrame}>
+                    <View style={styles.primaryAction}>
+                      {isRetrying ? (
+                        <View style={styles.loadingRow}>
+                          <ActivityIndicator size="small" color="#FFF8EE" />
+                          <Text style={styles.primaryActionText}>{primaryActionLabel}</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.primaryActionText}>{primaryActionLabel}</Text>
+                      )}
                     </View>
                   </View>
                 </Pressable>
+
+              <View style={styles.actionRow}>
                 <Pressable onPress={() => router.push('/archive')} style={styles.secondaryActionShell}>
                   <View style={styles.secondaryActionFrame}>
                     <View style={styles.secondaryAction}>
@@ -294,6 +300,9 @@ const styles = StyleSheet.create({
     padding: 3,
     backgroundColor: '#06080B',
   },
+  primaryActionDisabled: {
+    opacity: 0.72,
+  },
   primaryActionHighlight: {
     position: 'absolute',
     top: 3,
@@ -328,6 +337,11 @@ const styles = StyleSheet.create({
     color: '#FFF8EE',
     fontSize: 17,
     fontWeight: '800',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   secondaryActionShell: {
     flex: 1,

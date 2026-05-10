@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ImageBackground,
@@ -15,6 +16,7 @@ import {
 
 import { useAppAccess } from '@/context/app-access-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
+import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { getProfileHighlights, parseFormattedProfile } from '@/utils/profile-document';
 
 function buildPreservedDetails(values?: Record<string, string>) {
@@ -111,9 +113,11 @@ function needsPlotAttention(profile: {
 export default function ArchiveScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
-  const { profiles, selectedProfileId, setSelectedProfileId, deleteProfile, reopenProfileForEditing, ensureProfilePdf, isLoaded } = useSavedProfiles();
+  const { loadFromSavedProfile } = useVoiceNoteSession();
+  const { profiles, selectedProfileId, setSelectedProfileId, deleteProfile, reopenProfileForEditing, ensureProfilePdf, retryPendingVoiceProcessing, isLoaded } = useSavedProfiles();
   const [searchQuery, setSearchQuery] = useState('');
   const [openProfileId, setOpenProfileId] = useState<string | null>(null);
+  const [retryingProfileId, setRetryingProfileId] = useState<string | null>(null);
   const [viewportHeight, setViewportHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView | null>(null);
   const archiveSectionOffsetRef = useRef(0);
@@ -182,7 +186,7 @@ export default function ArchiveScreen() {
     if (!profile) {
       return '/profile-preview';
     }
-    if (profile.renderError && profile.sourceKind === 'raw-notes') {
+    if (profile.pendingAction === 'process-voice-audio' || (profile.renderError && profile.sourceKind === 'raw-notes')) {
       return '/raw-notes-pending';
     }
     return profile.documentKind === 'plot' ? '/rendered-profile' : '/profile-preview';
@@ -250,7 +254,13 @@ export default function ArchiveScreen() {
           <Text style={styles.selectedMeta}>
             {selectedProfile
               ? `${selectedHighlights?.layerCount ?? 0} layers · ${selectedHighlights?.stabilityCount ?? 0} tests · ${
-                  selectedProfile.renderError ? 'Plot failed' : selectedProfile.pdfUri ? 'PDF saved' : 'PDF pending'
+                  selectedProfile.pendingAction === 'process-voice-audio'
+                    ? 'Waiting to process'
+                    : selectedProfile.renderError
+                      ? 'Plot failed'
+                      : selectedProfile.pdfUri
+                        ? 'PDF saved'
+                        : 'PDF pending'
                 }`
               : 'Archive actions will use the selected profile.'}
           </Text>
@@ -401,12 +411,14 @@ export default function ArchiveScreen() {
                     </View>
                   </View>
                   <Text style={styles.profileQuickMeta}>
-                    {highlights.layerCount} layers · {highlights.stabilityCount} tests · {profile.renderError ? 'plot failed' : profile.documentKind === 'plot' ? 'plot saved' : profile.pdfUri ? 'report only' : 'draft only'}
+                    {highlights.layerCount} layers · {highlights.stabilityCount} tests · {profile.pendingAction === 'process-voice-audio' ? 'waiting to process' : profile.renderError ? 'plot failed' : profile.documentKind === 'plot' ? 'plot saved' : profile.pdfUri ? 'report only' : 'draft only'}
                   </Text>
                   <Text style={styles.profileDate}>Saved {new Date(profile.createdAt).toLocaleString()}</Text>
                   {showRenderDebug ? (
                     <Text style={styles.renderErrorText}>
-                      {profile.renderError
+                      {profile.pendingAction === 'process-voice-audio'
+                        ? profile.pendingMessage || 'Voice recording is saved locally and waiting to be processed.'
+                        : profile.renderError
                         ? `Renderer issue: ${profile.renderError}`
                         : 'This profile is using the older report output and can be upgraded to a plotted render.'}
                     </Text>
@@ -420,26 +432,51 @@ export default function ArchiveScreen() {
                     <View style={styles.profileActions}>
                       {showRenderDebug ? (
                         <Pressable
+                          disabled={retryingProfileId === profile.id}
                           onPress={() => {
                             void (async () => {
-                              setSelectedProfileId(profile.id);
-                              const renderResult = await ensureProfilePdf(profile.id);
-                              if (renderResult.uri) {
-                                router.push({
-                                  pathname: '/rendered-profile',
-                                  params: { profileId: profile.id },
-                                });
-                                return;
+                              try {
+                                setRetryingProfileId(profile.id);
+                                setSelectedProfileId(profile.id);
+                                if (profile.pendingAction === 'process-voice-audio') {
+                                  const retryResult = await retryPendingVoiceProcessing(profile.id);
+                                  if (retryResult.profile && !retryResult.error) {
+                                    loadFromSavedProfile(retryResult.profile);
+                                    router.push('/voice-review');
+                                    return;
+                                  }
+                                  Alert.alert(
+                                    'Still Waiting On Connection',
+                                    retryResult.error ||
+                                      'Your recording is still saved locally and can be retried once service returns.'
+                                  );
+                                  return;
+                                }
+                                const renderResult = await ensureProfilePdf(profile.id);
+                                if (renderResult.uri) {
+                                  router.push({
+                                    pathname: '/rendered-profile',
+                                    params: { profileId: profile.id },
+                                  });
+                                  return;
+                                }
+                                Alert.alert(
+                                  profile.renderError ? 'Plot Render Failed' : 'Plot Upgrade Failed',
+                                  renderResult.error ||
+                                    'The renderer still did not complete. Your profile data is safe in Archive and can be edited or retried later.'
+                                );
+                              } finally {
+                                setRetryingProfileId((current) => (current === profile.id ? null : current));
                               }
-                              Alert.alert(
-                                profile.renderError ? 'Plot Render Failed' : 'Plot Upgrade Failed',
-                                renderResult.error ||
-                                  'The renderer still did not complete. Your profile data is safe in Archive and can be edited or retried later.'
-                              );
                             })();
                           }}
-                          style={styles.inlineAction}>
-                          <Text style={styles.inlineActionText}>Retry Render</Text>
+                          style={[styles.inlineAction, retryingProfileId === profile.id ? styles.inlineActionDisabled : null]}>
+                          <View style={styles.inlineActionContent}>
+                            {retryingProfileId === profile.id ? <ActivityIndicator size="small" color="#173248" /> : null}
+                            <Text style={styles.inlineActionText}>
+                              {profile.pendingAction === 'process-voice-audio' ? 'Retry Processing' : 'Retry Render'}
+                            </Text>
+                          </View>
                         </Pressable>
                       ) : null}
                       <Pressable
@@ -1028,6 +1065,14 @@ const styles = StyleSheet.create({
     borderRightColor: 'rgba(7,20,36,0.24)',
     borderBottomWidth: 3,
     borderBottomColor: 'rgba(7,20,36,0.38)',
+  },
+  inlineActionDisabled: {
+    opacity: 0.72,
+  },
+  inlineActionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   inlineActionText: {
     color: '#173248',

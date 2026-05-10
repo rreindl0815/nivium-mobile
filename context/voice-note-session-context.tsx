@@ -11,6 +11,7 @@ type VoiceNoteSessionContextValue = {
   session: VoiceNoteSession;
   isLoaded: boolean;
   setFromFormatterResult: (input: {
+    profileId?: string;
     transcriptRaw?: string;
     engineText?: string;
     resolvedValues?: Record<string, string>;
@@ -130,6 +131,7 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
   };
 
   const setFromFormatterResult = (input: {
+    profileId?: string;
     transcriptRaw?: string;
     engineText?: string;
     resolvedValues?: Record<string, string>;
@@ -148,7 +150,7 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
     const reviewValues = hydrateStructuredValuesFromFormattedText(engineText || transcriptRaw, input.resolvedValues ?? {});
     const seededSession = buildSessionFromReviewValues(
       {
-        profileId: undefined,
+        profileId: input.profileId,
         transcriptRaw,
         engineTextOriginal: engineText || transcriptRaw,
         engineTextCurrent: engineText || transcriptRaw,
