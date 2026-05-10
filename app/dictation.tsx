@@ -1381,10 +1381,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '800',
   },
-  layerInlineActionRow: {
-    marginBottom: 14,
-    flexDirection: 'row',
-  },
   insertLayerButton: {
     borderRadius: 8,
     paddingVertical: 12,
@@ -1711,9 +1707,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     flexShrink: 1,
   },
-  subFieldLabelSpacing: {
-    marginTop: 4,
-  },
   optionList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1791,44 +1784,6 @@ const styles = StyleSheet.create({
     color: '#FFF8EE',
     fontSize: 18,
     fontWeight: '800',
-  },
-  bottomHomeShell: {
-    borderRadius: 8,
-    padding: 3,
-    backgroundColor: '#06080B',
-    shadowColor: '#091827',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    elevation: 12,
-  },
-  bottomHomeFrame: {
-    borderRadius: 5,
-    padding: 2,
-    backgroundColor: '#20384D',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(255,255,255,0.22)',
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(255,255,255,0.14)',
-    borderRightWidth: 2,
-    borderRightColor: 'rgba(7,20,36,0.38)',
-    borderBottomWidth: 3,
-    borderBottomColor: 'rgba(7,20,36,0.52)',
-  },
-  bottomHomeButton: {
-    borderRadius: 3,
-    paddingVertical: 13,
-    paddingHorizontal: 18,
-    backgroundColor: '#94A8B8',
-    alignItems: 'center',
-  },
-  bottomHomeButtonText: {
-    color: '#173248',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  bottomPressed: {
-    transform: [{ scale: 0.985 }, { translateY: 2 }],
   },
   pressed: {
     transform: [{ scale: 0.985 }, { translateY: 2 }],
