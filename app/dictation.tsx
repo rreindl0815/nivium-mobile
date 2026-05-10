@@ -18,6 +18,9 @@ import {
 } from 'react-native';
 
 import { AccordionSection } from '@/components/accordion-section';
+import { LayerEditor as ReviewStyleLayerEditor } from '@/components/profile-editor/layer-editor';
+import { ObservationDetailsEditor } from '@/components/profile-editor/observation-details-editor';
+import type { CurrentLocationStatus } from '@/components/profile-editor/editor-types';
 import { useProfileDraft } from '@/context/profile-draft-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { demoManualEntryProfiles, demoManualEntryValues, demoRawNotes } from '@/data/demo-profile';
@@ -40,10 +43,6 @@ type SampleLibraryEntry = {
   title: string;
   rawNotes: string;
   values: Record<string, string>;
-};
-type CurrentLocationStatus = {
-  tone: 'success' | 'error';
-  message: string;
 };
 
 function orderSampleEntries(entries: SampleLibraryEntry[]) {
@@ -540,15 +539,53 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                 sectionOffsetsRef.current[section.id] = event.nativeEvent.layout.y;
               }}>
               <AccordionSection
-                title={section.title}
-                description={section.description}
+                title={isManualMode && section.id === 'metadata' ? 'Observation Details' : section.title}
+                description={
+                  isManualMode && section.id === 'metadata'
+                    ? 'General, location, weather, and snow conditions'
+                    : section.description
+                }
                 accent={isManualMode ? '#20384D' : section.accent}
                 compact={isManualMode}
                 isOpen={openSectionId === section.id}
                 onToggle={() => {
                   setOpenSectionId((current) => (current === section.id ? null : section.id));
                 }}>
-                {section.id === 'layers' ? (
+                {section.id === 'layers' && isManualMode ? (
+                  <ManualLayerEditor
+                    values={draft.values}
+                    onChange={(fieldId, value) => {
+                      setSaveMessage('');
+                      setFieldValue(fieldId, value);
+                    }}
+                    onReplace={(nextValues) => {
+                      setSaveMessage('');
+                      mergeFieldValues(nextValues);
+                    }}
+                    onBuilderLayout={(offsetY) => {
+                      layerBuilderOffsetRef.current = offsetY;
+                    }}
+                    onLayerLayout={(index, offsetY) => {
+                      layerCardOffsetsRef.current[index] = offsetY;
+                    }}
+                    onFocusLayer={(index) => {
+                      const scrollToLayer = () => {
+                        const targetY = Math.max(
+                          sectionsOffsetRef.current +
+                            (sectionOffsetsRef.current.layers ?? 0) +
+                            layerBuilderOffsetRef.current +
+                            (layerCardOffsetsRef.current[index] ?? 0) -
+                            12,
+                          0
+                        );
+                        scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                      };
+
+                      setTimeout(scrollToLayer, 60);
+                      setTimeout(scrollToLayer, 180);
+                    }}
+                  />
+                ) : section.id === 'layers' ? (
                   <LayerBuilder
                     values={draft.values}
                     onChange={(fieldId, value) => {
@@ -594,123 +631,97 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                       setFieldValue(fieldId, value);
                     }}
                   />
+                ) : section.id === 'metadata' && isManualMode ? (
+                  <ObservationDetailsEditor
+                    values={draft.values}
+                    onChange={(fieldId, value) => {
+                      setSaveMessage('');
+                      setFieldValue(fieldId, value);
+                    }}
+                    onUseCurrentLocation={applyCurrentLocation}
+                    isApplyingCurrentLocation={isApplyingCurrentLocation}
+                    currentLocationStatus={currentLocationStatus}
+                  />
                 ) : (
                   section.fields.map((field) => (
-                    <View key={field.id}>
-                      {isManualMode && section.id === 'metadata' && field.id === 'elevation' ? (
-                        <View style={styles.locationHelperCard}>
-                          <Text style={styles.locationHelperTitle}>Current Location</Text>
-                          <Pressable
-                            onPress={applyCurrentLocation}
-                            disabled={isApplyingCurrentLocation}
-                            style={({ pressed }) => [
-                              styles.locationHelperButton,
-                              isApplyingCurrentLocation ? styles.locationHelperButtonDisabled : null,
-                              pressed && !isApplyingCurrentLocation ? styles.pressed : null,
-                            ]}>
-                            {isApplyingCurrentLocation ? (
-                              <View style={styles.loadingRow}>
-                                <ActivityIndicator size="small" color="#FFF8EE" />
-                                <Text style={styles.locationHelperButtonText}>Using Current Location...</Text>
-                              </View>
-                            ) : (
-                              <Text style={styles.locationHelperButtonText}>
-                                Use Current Location for Lat / Long and Elevation
-                              </Text>
-                            )}
-                          </Pressable>
-                          {currentLocationStatus ? (
-                            <Text
-                              style={[
-                                styles.locationHelperMessage,
-                                currentLocationStatus.tone === 'error'
-                                  ? styles.locationHelperMessageError
-                                  : styles.locationHelperMessageSuccess,
-                              ]}>
-                              {currentLocationStatus.message}
-                            </Text>
-                          ) : null}
+                    <View key={field.id} style={styles.field}>
+                      <Text style={styles.fieldLabel}>{field.label}</Text>
+                      {field.id === 'date' ? (
+                        <DateField
+                          value={draft.values[field.id] ?? ''}
+                          onChange={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                        />
+                      ) : field.id === 'time' ? (
+                        <SelectorField
+                          label="Time"
+                          value={draft.values[field.id] ?? ''}
+                          placeholder="Choose time"
+                          options={timeOptions}
+                          onSelect={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                        />
+                      ) : field.id === 'wind' ? (
+                        <WindField
+                          value={draft.values[field.id] ?? ''}
+                          onChange={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                        />
+                      ) : field.options ? (
+                        <View style={styles.optionList}>
+                          {field.options.map((option) => {
+                            const selected = (draft.values[field.id] ?? '') === option;
+                            return (
+                              <Pressable
+                                key={option}
+                                onPress={() => {
+                                  setSaveMessage('');
+                                  setFieldValue(field.id, option);
+                                }}
+                                style={[styles.optionChip, selected ? styles.optionChipSelected : null]}>
+                                <Text style={[styles.optionChipText, selected ? styles.optionChipTextSelected : null]}>
+                                  {option}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
                         </View>
-                      ) : null}
-                      <View style={styles.field}>
-                        <Text style={styles.fieldLabel}>{field.label}</Text>
-                        {field.id === 'date' ? (
-                          <DateField
-                            value={draft.values[field.id] ?? ''}
-                            onChange={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                          />
-                        ) : field.id === 'time' ? (
-                          <SelectorField
-                            label="Time"
-                            value={draft.values[field.id] ?? ''}
-                            placeholder="Choose time"
-                            options={timeOptions}
-                            onSelect={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                          />
-                        ) : field.id === 'wind' ? (
-                          <WindField
-                            value={draft.values[field.id] ?? ''}
-                            onChange={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                          />
-                        ) : field.options ? (
-                          <View style={styles.optionList}>
-                            {field.options.map((option) => {
-                              const selected = (draft.values[field.id] ?? '') === option;
-                              return (
-                                <Pressable
-                                  key={option}
-                                  onPress={() => {
-                                    setSaveMessage('');
-                                    setFieldValue(field.id, option);
-                                  }}
-                                  style={[styles.optionChip, selected ? styles.optionChipSelected : null]}>
-                                  <Text style={[styles.optionChipText, selected ? styles.optionChipTextSelected : null]}>
-                                    {option}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </View>
-                        ) : (
-                          <TextInput
-                            value={draft.values[field.id] ?? ''}
-                            onChangeText={(value) => {
-                              setSaveMessage('');
-                              setFieldValue(field.id, value);
-                            }}
-                            onFocus={() => {
-                              if (!isManualMode || field.id !== 'comments') {
-                                return;
-                              }
-                              const targetY = Math.max(sectionsOffsetRef.current + (sectionOffsetsRef.current.notes ?? 0) - 40, 0);
-                              setTimeout(() => {
-                                scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-                              }, 120);
-                              setTimeout(() => {
-                                scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-                              }, 260);
-                              setTimeout(() => {
-                                scrollViewRef.current?.scrollTo({ y: targetY + 80, animated: true });
-                              }, 420);
-                            }}
-                            placeholder={field.placeholder}
-                            placeholderTextColor="#8C8A84"
-                            multiline={field.multiline}
-                            keyboardType={field.keyboardType}
-                            style={[styles.fieldInput, field.multiline ? styles.multilineInput : null]}
-                            textAlignVertical={field.multiline ? 'top' : 'center'}
-                          />
-                        )}
-                      </View>
+                      ) : (
+                        <TextInput
+                          value={draft.values[field.id] ?? ''}
+                          onChangeText={(value) => {
+                            setSaveMessage('');
+                            setFieldValue(field.id, value);
+                          }}
+                          onFocus={() => {
+                            if (!isManualMode || field.id !== 'comments') {
+                              return;
+                            }
+                            const targetY = Math.max(sectionsOffsetRef.current + (sectionOffsetsRef.current.notes ?? 0) - 40, 0);
+                            setTimeout(() => {
+                              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                            }, 120);
+                            setTimeout(() => {
+                              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+                            }, 260);
+                            setTimeout(() => {
+                              scrollViewRef.current?.scrollTo({ y: targetY + 80, animated: true });
+                            }, 420);
+                          }}
+                          placeholder={field.placeholder}
+                          placeholderTextColor="#8C8A84"
+                          multiline={field.multiline}
+                          keyboardType={field.keyboardType}
+                          style={[styles.fieldInput, field.multiline ? styles.multilineInput : null]}
+                          textAlignVertical={field.multiline ? 'top' : 'center'}
+                        />
+                      )}
                     </View>
                   ))
                 )}
@@ -764,7 +775,7 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                       <Text style={styles.bottomCreateButtonText}>Building Profile...</Text>
                     </View>
                   ) : (
-                    <Text style={styles.bottomCreateButtonText}>Create Profile</Text>
+                    <Text style={styles.bottomCreateButtonText}>Generate Profile</Text>
                   )}
                 </View>
               </View>
@@ -1557,51 +1568,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  locationHelperCard: {
-    gap: 10,
-    marginBottom: 16,
-    padding: 14,
-    borderRadius: 8,
-    backgroundColor: '#D7E0E8',
-    borderWidth: 1,
-    borderColor: '#31495C',
-  },
-  locationHelperTitle: {
-    color: '#173248',
-    fontSize: 12,
-    lineHeight: 14,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  locationHelperButton: {
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#173248',
-  },
-  locationHelperButtonDisabled: {
-    opacity: 0.7,
-  },
-  locationHelperButtonText: {
-    color: '#FFF8EE',
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  locationHelperMessage: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-  },
-  locationHelperMessageSuccess: {
-    color: '#2F5D45',
-  },
-  locationHelperMessageError: {
-    color: '#9B332A',
-  },
   fieldInput: {
     borderRadius: 8,
     paddingHorizontal: 14,
@@ -1978,6 +1944,37 @@ function WindField({ value, onChange }: { value: string; onChange: (value: strin
         />
       ) : null}
     </View>
+  );
+}
+
+function ManualLayerEditor({
+  values,
+  onChange,
+  onReplace,
+  onBuilderLayout,
+  onLayerLayout,
+  onFocusLayer,
+}: {
+  values: Record<string, string>;
+  onChange: (fieldId: string, value: string) => void;
+  onReplace: (values: Record<string, string>) => void;
+  onBuilderLayout: (offsetY: number) => void;
+  onLayerLayout: (index: number, offsetY: number) => void;
+  onFocusLayer: (index: number) => void;
+}) {
+  const [openLayerIndex, setOpenLayerIndex] = useState(0);
+
+  return (
+    <ReviewStyleLayerEditor
+      values={values}
+      onChange={onChange}
+      onReplace={onReplace}
+      openLayerIndex={openLayerIndex}
+      onOpenLayerIndexChange={setOpenLayerIndex}
+      onEditorLayout={onBuilderLayout}
+      onLayerLayout={onLayerLayout}
+      onFocusLayer={onFocusLayer}
+    />
   );
 }
 
