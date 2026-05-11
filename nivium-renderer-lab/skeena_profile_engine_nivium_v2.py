@@ -1695,13 +1695,13 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
                 txt = re.sub(r'deg', '', txt, flags=re.I)
                 txt = re.sub(r'\s+', ' ', txt).strip()
 
-            # Fit Lat/Long into its line by shrinking font ONLY for this field (everything else stays FONT_ALL)
-            if k == "lat_long":
-                # Auto-fit Lat/Long into its underline by shrinking font ONLY for this field.
+            # Fit selected metadata lines by shrinking font ONLY for these fields.
+            if k in ("lat_long", "observer", "org"):
+                # Auto-fit the value into its underline by shrinking font ONLY for this field.
                 # Keep it isolated to avoid font changes bleeding into other metadata.
                 # Underline in SVG: <path d="m 301.17097,968.33231 h 94.66667">
                 underline_len = 94.66667  # SVG units
-                pad = 4.0  # SVG units padding on both sides to avoid icon/neighbor fields
+                pad = 4.0 if k == "lat_long" else 2.5  # SVG units padding on both sides to avoid icon/neighbor fields
                 maxw = max(10.0, (underline_len - 2*pad) * sx)  # in PDF units
 
                 def _fit_font_size(text_, font_, start_fs, min_fs=6.0, step=0.5):
@@ -1713,7 +1713,9 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
                     return max(min_fs, fs)
 
                 c.saveState()
-                fs = _fit_font_size(txt, "Helvetica", FONT_ALL + 3, min_fs=8.0, step=0.5)
+                start_fs = FONT_ALL + 3 if k == "lat_long" else FONT_ALL + 2
+                min_fs = 8.0 if k == "lat_long" else 8.0
+                fs = _fit_font_size(txt, "Helvetica", start_fs, min_fs=min_fs, step=0.5)
                 c.setFont("Helvetica", fs)
                 c.drawCentredString(ax*sx, ih - ((ay-voff)*sy), txt)
                 c.restoreState()
