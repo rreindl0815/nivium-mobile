@@ -65,7 +65,7 @@ export default function ProfileDefaultsScreen() {
             <View style={styles.heroOverlay} />
             <Text style={styles.heroTitle}>Nivium</Text>
             <View style={styles.heroSubtitleStack}>
-              <Text style={styles.heroSubtitle}>Profile Defaults</Text>
+              <Text style={styles.heroSubtitle}>Prefill</Text>
               <Image source={require('../assets/images/nivium-hero-swish.png')} style={styles.heroSubtitleSwish} resizeMode="stretch" />
             </View>
           </ImageBackground>
@@ -74,12 +74,8 @@ export default function ProfileDefaultsScreen() {
             <View style={styles.cardHighlight} />
             <View style={styles.card}>
               <View style={styles.cardAccent} />
-              <Text style={styles.sectionLabel}>Prefill</Text>
-              <Text style={styles.cardTitle}>Use your normal observer details automatically.</Text>
-              <Text style={styles.cardCopy}>
-                These defaults apply to brand-new Voice Notes and Manual Data Entry profiles. Existing profiles keep their saved
-                values. Elevation unit also controls how elevation prints on the plotted profile.
-              </Text>
+              <Text style={styles.cardTitle}>Prefill</Text>
+              <Text style={styles.cardCopy}>prefill your default values below</Text>
 
               {!isLoaded ? (
                 <View style={styles.loadingState}>
@@ -126,17 +122,8 @@ export default function ProfileDefaultsScreen() {
                       setSaveMessage('');
                     }}
                   />
-
-                  <View style={styles.noteBox}>
-                    <Text style={styles.noteTitle}>How it behaves</Text>
-                    <Text style={styles.noteCopy}>New profiles start with these values.</Text>
-                    <Text style={styles.noteCopy}>You can still change observer, organization, and elevation unit in review.</Text>
-                    <Text style={styles.noteCopy}>Saved profiles keep the elevation unit they were created with.</Text>
-                  </View>
                 </View>
               )}
-
-              {saveMessage ? <Text style={styles.saveMessage}>{saveMessage}</Text> : null}
 
               <View style={styles.actionStack}>
                 <Pressable onPress={handleSave} disabled={!isLoaded || isSaving} style={styles.primaryShell}>
@@ -253,17 +240,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#20384D',
   },
-  sectionLabel: {
-    color: '#B9D2E3',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-  },
   cardTitle: {
     color: '#FFF8EE',
-    fontSize: 25,
-    lineHeight: 30,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: '800',
   },
   cardCopy: {
@@ -306,30 +286,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 12,
     paddingVertical: 12,
-  },
-  noteBox: {
-    borderRadius: 8,
-    padding: 14,
-    backgroundColor: '#20384D',
-    gap: 6,
-  },
-  noteTitle: {
-    color: '#F4E2C4',
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  noteCopy: {
-    color: '#D6E5EE',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  saveMessage: {
-    color: '#F4E2C4',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
   },
   actionStack: {
     gap: 10,
