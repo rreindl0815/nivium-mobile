@@ -1701,7 +1701,7 @@ def render_printsafe_pdf(profile:ProfileData, template_svg:str, background_png:s
                 # Keep it isolated to avoid font changes bleeding into other metadata.
                 # Underline in SVG: <path d="m 301.17097,968.33231 h 94.66667">
                 underline_len = 94.66667  # SVG units
-                pad = 4.0 if k == "lat_long" else 2.5  # SVG units padding on both sides to avoid icon/neighbor fields
+                pad = 4.0 if k == "lat_long" else 12.0  # SVG units padding on both sides to avoid icon/neighbor fields
                 maxw = max(10.0, (underline_len - 2*pad) * sx)  # in PDF units
 
                 def _fit_font_size(text_, font_, start_fs, min_fs=6.0, step=0.5):
