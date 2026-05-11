@@ -25,6 +25,7 @@ export default function ProfileDefaultsScreen() {
   const [elevationUnitDefault, setElevationUnitDefault] = useState<'m' | 'ft'>('m');
   const [saveMessage, setSaveMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const saveButtonLabel = isSaving ? 'Saving...' : saveMessage ? 'Saved' : 'Save Defaults';
 
   useEffect(() => {
     if (!isLoaded) {
@@ -142,7 +143,7 @@ export default function ProfileDefaultsScreen() {
                   <View style={styles.primaryHighlight} />
                   <View style={styles.primaryFrame}>
                     <View style={[styles.primaryButton, !isLoaded || isSaving ? styles.primaryButtonDisabled : null]}>
-                      <Text style={styles.primaryText}>{isSaving ? 'Saving...' : 'Save Defaults'}</Text>
+                      <Text style={styles.primaryText}>{saveButtonLabel}</Text>
                     </View>
                   </View>
                 </Pressable>

@@ -11,6 +11,7 @@ import { formatVoiceNotesForEditing } from '@/utils/voice-notes-format';
 const STORAGE_KEY = 'skeena-profile-draft-v2';
 const LEGACY_STORAGE_KEYS = ['skeena-profile-draft'];
 const ALL_DRAFT_KEYS = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
+const DEFAULT_SEEDED_FIELD_IDS = new Set(['observer', 'organization', 'elevation_unit']);
 
 type DraftContextValue = {
   draft: ProfileDraft;
@@ -80,6 +81,31 @@ export function ProfileDraftProvider({ children }: { children: React.ReactNode }
       isMounted = false;
     };
   }, [areDefaultsLoaded, defaults]);
+
+  useEffect(() => {
+    if (!areDefaultsLoaded || !isLoaded) {
+      return;
+    }
+
+    const currentDraft = draftRef.current;
+    if (currentDraft.rawNotes.trim()) {
+      return;
+    }
+    if (!isFreshSeedableDraft(currentDraft)) {
+      return;
+    }
+
+    const nextValues = buildDefaultProfileValues(defaults, currentDraft.values);
+    if (haveSameValues(currentDraft.values, nextValues)) {
+      return;
+    }
+
+    void persistDraft({
+      ...currentDraft,
+      values: nextValues,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [areDefaultsLoaded, defaults, isLoaded]);
 
   const persistDraft = async (nextDraft: ProfileDraft) => {
     const writeVersion = writeVersionRef.current + 1;
@@ -237,4 +263,21 @@ export function useProfileDraft() {
   }
 
   return context;
+}
+
+function isFreshSeedableDraft(draft: ProfileDraft) {
+  return !Object.entries(draft.values).some(([fieldId, value]) => {
+    if (DEFAULT_SEEDED_FIELD_IDS.has(fieldId)) {
+      return false;
+    }
+    return value.trim().length > 0;
+  });
+}
+
+function haveSameValues(
+  left: Record<string, string>,
+  right: Record<string, string>
+) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => (left[key] ?? '') === (right[key] ?? ''));
 }
