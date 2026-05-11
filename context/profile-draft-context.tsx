@@ -95,7 +95,7 @@ export function ProfileDraftProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    const nextValues = buildDefaultProfileValues(defaults, currentDraft.values);
+    const nextValues = buildRefreshedDefaultValues(currentDraft.values, defaults);
     if (haveSameValues(currentDraft.values, nextValues)) {
       return;
     }
@@ -272,6 +272,19 @@ function isFreshSeedableDraft(draft: ProfileDraft) {
     }
     return value.trim().length > 0;
   });
+}
+
+function buildRefreshedDefaultValues(
+  values: Record<string, string>,
+  defaults: { observerDefault: string; organizationDefault: string; elevationUnitDefault: 'm' | 'ft' }
+) {
+  const nextValues = { ...values };
+
+  nextValues.observer = defaults.observerDefault.trim();
+  nextValues.organization = defaults.organizationDefault.trim();
+  nextValues.elevation_unit = defaults.elevationUnitDefault;
+
+  return nextValues;
 }
 
 function haveSameValues(

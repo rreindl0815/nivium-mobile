@@ -137,6 +137,28 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
     };
   }, [areDefaultsLoaded, defaults]);
 
+  useEffect(() => {
+    if (!areDefaultsLoaded || !isLoaded) {
+      return;
+    }
+
+    const currentSession = sessionRef.current;
+    if (!shouldSeedVoiceNoteMetadata(currentSession)) {
+      return;
+    }
+
+    const nextReviewValues = buildRefreshedVoiceNoteSeedValues(currentSession.reviewValues, defaults);
+    if (haveSameReviewValues(currentSession.reviewValues, nextReviewValues)) {
+      return;
+    }
+
+    void persistSession({
+      ...currentSession,
+      reviewValues: nextReviewValues,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [areDefaultsLoaded, defaults, isLoaded]);
+
   const persistSession = async (nextSession: VoiceNoteSession) => {
     sessionRef.current = nextSession;
     setSession(nextSession);
@@ -277,6 +299,14 @@ function buildSeededReviewValues(values: Record<string, string>, defaults: Profi
   return nextValues;
 }
 
+function buildRefreshedVoiceNoteSeedValues(values: Record<string, string>, defaults: ProfileDefaults) {
+  const nextValues = { ...values };
+  nextValues.observer = defaults.observerDefault.trim();
+  nextValues.organization = defaults.organizationDefault.trim();
+  nextValues.elevation_unit = defaults.elevationUnitDefault;
+  return nextValues;
+}
+
 function shouldSeedVoiceNoteMetadata(session: Partial<VoiceNoteSession>) {
   return !Boolean(
     session.profileId ||
@@ -292,4 +322,9 @@ function formatVoiceNoteDate(date: Date) {
 
 function formatVoiceNoteTime(date: Date) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function haveSameReviewValues(left: Record<string, string>, right: Record<string, string>) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => (left[key] ?? '') === (right[key] ?? ''));
 }

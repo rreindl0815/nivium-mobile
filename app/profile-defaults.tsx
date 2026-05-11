@@ -117,6 +117,7 @@ export default function ProfileDefaultsScreen() {
                     value={elevationUnitDefault}
                     placeholder="Choose unit"
                     options={elevationUnitOptions}
+                    labelColor="#D5E4ED"
                     onSelect={(next) => {
                       setElevationUnitDefault(normalizeElevationUnit(next));
                       setSaveMessage('');

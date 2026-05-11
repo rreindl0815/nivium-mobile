@@ -9,6 +9,7 @@ export function SelectorField({
   placeholder,
   options,
   clearOptionLabel,
+  labelColor,
   onSelect,
 }: {
   label: string;
@@ -16,6 +17,7 @@ export function SelectorField({
   placeholder: string;
   options: readonly SelectorOption[];
   clearOptionLabel?: string;
+  labelColor?: string;
   onSelect: (value: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -36,7 +38,7 @@ export function SelectorField({
 
   return (
     <View style={styles.selectorField}>
-      <Text style={styles.subFieldLabel}>{label}</Text>
+      <Text style={[styles.subFieldLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
       <Pressable
         onPress={() => setIsOpen((current) => !current)}
         style={[styles.selectorTrigger, isOpen ? styles.selectorTriggerSelected : null]}>
