@@ -539,8 +539,12 @@ function hydrateManualValuesForEdit(profile: SavedProfile) {
     setIfPresent(hydrated, 'observer', getMetadataValue(parsed, 'Observer'));
     setIfPresent(hydrated, 'organization', getMetadataValue(parsed, 'Organization'));
     const elevationMetadata = parseElevationMetadata(getMetadataValue(parsed, 'Elevation'));
-    setIfPresent(hydrated, 'elevation', elevationMetadata.elevation);
-    setIfPresent(hydrated, 'elevation_unit', elevationMetadata.unit);
+    if (!(sourceValues.elevation ?? '').trim()) {
+      setIfPresent(hydrated, 'elevation', elevationMetadata.elevation);
+    }
+    if (!(sourceValues.elevation_unit ?? '').trim()) {
+      setIfPresent(hydrated, 'elevation_unit', elevationMetadata.unit);
+    }
     setIfPresent(hydrated, 'aspect', getMetadataValue(parsed, 'Aspect').toLowerCase());
     setIfPresent(hydrated, 'slope_angle', getMetadataValue(parsed, 'Slope Angle').replace(/[^\d.]/g, ''));
     setIfPresent(hydrated, 'lat_long', getMetadataValue(parsed, 'Lat/Long'));
