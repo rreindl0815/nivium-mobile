@@ -4,7 +4,7 @@ const LAST_KNOWN_MAX_AGE_MS = 60_000;
 const LAST_KNOWN_REQUIRED_ACCURACY_METERS = 80;
 
 export type CurrentLocationValues = {
-  elevation: string;
+  elevationMeters: string;
   latLong: string;
   hasElevation: boolean;
 };
@@ -50,7 +50,7 @@ export async function resolveCurrentLocationValuesAsync(): Promise<CurrentLocati
   const hasElevation = typeof altitude === 'number' && Number.isFinite(altitude);
 
   return {
-    elevation: hasElevation ? `${Math.round(altitude)}` : '',
+    elevationMeters: hasElevation ? `${Math.round(altitude)}` : '',
     latLong: `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`,
     hasElevation,
   };

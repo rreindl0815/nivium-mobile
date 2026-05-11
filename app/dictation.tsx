@@ -30,6 +30,7 @@ import { demoManualEntryProfiles, demoManualEntryValues, demoRawNotes } from '@/
 import { fieldCardSections, requiredFieldIds } from '@/data/field-card';
 import type { SavedProfile } from '@/types/profile';
 import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
+import { convertMetersToElevationUnit, normalizeElevationUnit } from '@/utils/profile-defaults';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 
 const SAMPLE_LIBRARY_KEY = 'nivium-sample-library-v2';
@@ -273,9 +274,10 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
       setIsApplyingCurrentLocation(true);
       try {
         const currentLocation = await resolveCurrentLocationValuesAsync();
+        const elevationUnit = normalizeElevationUnit(draft.values.elevation_unit);
         setSaveMessage('');
         mergeFieldValues({
-          elevation: currentLocation.elevation,
+          elevation: convertMetersToElevationUnit(currentLocation.elevationMeters, elevationUnit),
           lat_long: currentLocation.latLong,
         });
         setCurrentLocationStatus({
@@ -674,6 +676,10 @@ export function DictationScreenContent({ mode }: { mode?: 'record' | 'manual' })
                     onChange={(fieldId, value) => {
                       setSaveMessage('');
                       setFieldValue(fieldId, value);
+                    }}
+                    onReplaceValues={(values) => {
+                      setSaveMessage('');
+                      replaceFieldValues(values);
                     }}
                     onUseCurrentLocation={applyCurrentLocation}
                     isApplyingCurrentLocation={isApplyingCurrentLocation}
@@ -2814,7 +2820,10 @@ function getLegacyLayerCount(values: Record<string, string>) {
 
 function buildLayerPreview(values: Record<string, string>, index: number, top: string, bottom: string) {
   const grain = [values[`layer_${index}_grain_1`] ?? '', values[`layer_${index}_grain_2`] ?? ''].filter(Boolean).join(' / ');
-  const hardness = [values[`layer_${index}_hardness_1`] ?? '', values[`layer_${index}_hardness_2`] ?? ''].filter(Boolean).join(' to ');
+  const hardness1 = values[`layer_${index}_hardness_1`] ?? '';
+  const rawHardness2 = values[`layer_${index}_hardness_2`] ?? '';
+  const hardness2 = rawHardness2 && rawHardness2 === hardness1 ? '' : rawHardness2;
+  const hardness = [hardness1, hardness2].filter(Boolean).join(' to ');
   const size = [values[`layer_${index}_size_1`] ?? '', values[`layer_${index}_size_2`] ?? '']
     .filter(Boolean)
     .map((value) => normalizeStructuredSizeLabel(value))

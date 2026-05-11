@@ -17,6 +17,7 @@ import {
 import { useAppAccess } from '@/context/app-access-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
+import { formatElevationDisplay } from '@/utils/profile-defaults';
 import { getProfileHighlights, parseFormattedProfile } from '@/utils/profile-document';
 
 function buildPreservedDetails(values?: Record<string, string>) {
@@ -27,7 +28,7 @@ function buildPreservedDetails(values?: Record<string, string>) {
   const rows = [
     ['Date', values.date],
     ['Observer', values.observer],
-    ['Elevation', values.elevation ? `${values.elevation} m` : ''],
+    ['Elevation', formatElevationDisplay(values.elevation, values.elevation_unit)],
     ['Aspect', values.aspect],
     ['Slope', values.slope_angle ? `${values.slope_angle} deg` : ''],
     ['Total HS', values.total_hs ? `${values.total_hs} cm` : ''],
@@ -51,7 +52,8 @@ function buildLayerDebugLines(values?: Record<string, string>) {
     const topField = (values[`layer_${index}_top`] ?? '').trim();
     const bottomField = (values[`layer_${index}_bottom`] ?? '').trim();
     const hardness1 = (values[`layer_${index}_hardness_1`] ?? '').trim();
-    const hardness2 = (values[`layer_${index}_hardness_2`] ?? '').trim();
+    const rawHardness2 = (values[`layer_${index}_hardness_2`] ?? '').trim();
+    const hardness2 = rawHardness2 && rawHardness2 === hardness1 ? '' : rawHardness2;
     const grain1 = (values[`layer_${index}_grain_1`] ?? '').trim();
     const grain2 = (values[`layer_${index}_grain_2`] ?? '').trim();
     const size1 = (values[`layer_${index}_size_1`] ?? '').trim();

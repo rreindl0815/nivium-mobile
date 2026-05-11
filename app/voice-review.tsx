@@ -34,6 +34,7 @@ import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { requiredFieldIds } from '@/data/field-card';
 import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
+import { convertMetersToElevationUnit, normalizeElevationUnit } from '@/utils/profile-defaults';
 
 export default function VoiceReviewScreen() {
   const router = useRouter();
@@ -133,9 +134,10 @@ export default function VoiceReviewScreen() {
       setIsApplyingCurrentLocation(true);
       try {
         const currentLocation = await resolveCurrentLocationValuesAsync();
+        const elevationUnit = normalizeElevationUnit(values.elevation_unit);
         replaceReviewValues({
           ...values,
-          elevation: currentLocation.elevation,
+          elevation: convertMetersToElevationUnit(currentLocation.elevationMeters, elevationUnit),
           lat_long: currentLocation.latLong,
         });
         setCurrentLocationStatus({
@@ -230,6 +232,7 @@ export default function VoiceReviewScreen() {
               <ObservationDetailsEditor
                 values={values}
                 onChange={setReviewFieldValue}
+                onReplaceValues={replaceReviewValues}
                 onUseCurrentLocation={applyCurrentLocation}
                 isApplyingCurrentLocation={isApplyingCurrentLocation}
                 currentLocationStatus={currentLocationStatus}

@@ -1,6 +1,11 @@
 import { StyleSheet, Text, TextInput, View, Pressable } from 'react-native';
 
 import { fieldCardSections } from '@/data/field-card';
+import {
+  convertElevationValue,
+  elevationUnitOptions,
+  normalizeElevationUnit,
+} from '@/utils/profile-defaults';
 
 import { chipOptionFieldIds, observationGroups, timeOptions } from './editor-constants';
 import { CurrentLocationHelper } from './current-location-helper';
@@ -16,6 +21,7 @@ const metadataFieldMap = new Map(
 export function ObservationDetailsEditor({
   values,
   onChange,
+  onReplaceValues,
   onUseCurrentLocation,
   isApplyingCurrentLocation,
   currentLocationStatus,
@@ -23,11 +29,35 @@ export function ObservationDetailsEditor({
 }: {
   values: FieldValueMap;
   onChange: (fieldId: string, value: string) => void;
+  onReplaceValues?: (values: FieldValueMap) => void;
   onUseCurrentLocation: () => void;
   isApplyingCurrentLocation: boolean;
   currentLocationStatus: CurrentLocationStatus | null;
   showCurrentLocationHelper?: boolean;
 }) {
+  const elevationUnit = normalizeElevationUnit(values.elevation_unit);
+
+  const handleElevationUnitChange = (nextUnit: string) => {
+    const normalizedNextUnit = normalizeElevationUnit(nextUnit);
+    const currentUnit = normalizeElevationUnit(values.elevation_unit);
+    const nextElevation = convertElevationValue(values.elevation, currentUnit, normalizedNextUnit);
+    const nextValues = {
+      ...values,
+      elevation_unit: normalizedNextUnit,
+      elevation: values.elevation?.trim() ? nextElevation : values.elevation ?? '',
+    };
+
+    if (onReplaceValues) {
+      onReplaceValues(nextValues);
+      return;
+    }
+
+    onChange('elevation_unit', normalizedNextUnit);
+    if (values.elevation?.trim()) {
+      onChange('elevation', nextElevation);
+    }
+  };
+
   return (
     <View style={styles.groupStack}>
       {observationGroups.map((group) => (
@@ -46,11 +76,24 @@ export function ObservationDetailsEditor({
               if (!field) {
                 return null;
               }
+              if (field.id === 'elevation_unit') {
+                return (
+                  <View key={field.id} style={styles.field}>
+                    <SelectorField
+                      label="Elevation Unit"
+                      value={elevationUnit}
+                      placeholder="Choose unit"
+                      options={elevationUnitOptions}
+                      onSelect={handleElevationUnitChange}
+                    />
+                  </View>
+                );
+              }
               return (
                 <ObservationField
                   key={field.id}
                   fieldId={field.id}
-                  label={getObservationFieldLabel(field.id, field.label)}
+                  label={getObservationFieldLabel(field.id, field.label, elevationUnit)}
                   placeholder={getObservationFieldPlaceholder(field.id, field.placeholder)}
                   keyboardType={field.keyboardType}
                   options={fieldId === 'time' ? timeOptions : field.options}
@@ -152,12 +195,14 @@ function ObservationField({
   );
 }
 
-function getObservationFieldLabel(fieldId: string, fallbackLabel: string) {
+function getObservationFieldLabel(fieldId: string, fallbackLabel: string, elevationUnit: string) {
   switch (fieldId) {
     case 'run_name':
       return 'Run Name / Location';
     case 'observer':
       return 'Observer(s)';
+    case 'elevation':
+      return `Elevation (${elevationUnit})`;
     case 'total_hs':
       return 'Total HS (cm)';
     case 'lat_long':

@@ -8,10 +8,9 @@ import { useAppAccess } from '@/context/app-access-context';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
+import { convertMetersToElevationUnit, formatElevationDisplay, normalizeElevationUnit } from '@/utils/profile-defaults';
 import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
 const metadataLines = [
-  'Date __________',
-  'Time __________',
   'Run Name / Location __________',
   'Observer(s) __________',
   'Organization __________',
@@ -84,10 +83,30 @@ function getFieldcardSectionTitle(sectionId: 'metadata' | 'layers' | 'temperatur
   }
 }
 
-function buildFieldLocationValues(values: Record<string, string>) {
+function buildVoiceNoteSeedValues(values: Record<string, string>) {
   const next: Record<string, string> = {};
+  const date = values.date?.trim() ?? '';
+  const time = values.time?.trim() ?? '';
+  const observer = values.observer?.trim() ?? '';
+  const organization = values.organization?.trim() ?? '';
+  const elevationUnit = values.elevation_unit?.trim() ?? '';
   const latLong = values.lat_long?.trim() ?? '';
   const elevation = values.elevation?.trim() ?? '';
+  if (date) {
+    next.date = date;
+  }
+  if (time) {
+    next.time = time;
+  }
+  if (observer) {
+    next.observer = observer;
+  }
+  if (organization) {
+    next.organization = organization;
+  }
+  if (elevationUnit) {
+    next.elevation_unit = elevationUnit;
+  }
   if (latLong) {
     next.lat_long = latLong;
   }
@@ -185,7 +204,7 @@ export default function RecordNotesScreen() {
 
     let queuedProfileId: string | null = null;
     let queuedAudioUri: string | null = null;
-    const preservedFieldLocationValues = buildFieldLocationValues(session.reviewValues);
+    const preservedSeedValues = buildVoiceNoteSeedValues(session.reviewValues);
 
     try {
       setIsProcessingAudio(true);
@@ -200,7 +219,7 @@ export default function RecordNotesScreen() {
       }
 
       await clearSession();
-      const queuedProfile = await queueVoiceNoteRecording(audioUri, preservedFieldLocationValues);
+      const queuedProfile = await queueVoiceNoteRecording(audioUri, preservedSeedValues);
       if (!queuedProfile?.audioUri) {
         throw new Error('Voice notes could not be saved locally.');
       }
@@ -263,9 +282,10 @@ export default function RecordNotesScreen() {
       setIsSavingFieldLocation(true);
       try {
         const currentLocation = await resolveCurrentLocationValuesAsync();
+        const elevationUnit = normalizeElevationUnit(session.reviewValues.elevation_unit);
         replaceReviewValues({
           ...session.reviewValues,
-          elevation: currentLocation.elevation,
+          elevation: convertMetersToElevationUnit(currentLocation.elevationMeters, elevationUnit),
           lat_long: currentLocation.latLong,
         });
         setFieldLocationStatus({
@@ -369,7 +389,9 @@ export default function RecordNotesScreen() {
                     <Text style={styles.fieldLocationSavedValue}>Lat / Long: {session.reviewValues.lat_long.trim()}</Text>
                   ) : null}
                   {session.reviewValues.elevation?.trim() ? (
-                    <Text style={styles.fieldLocationSavedValue}>Elevation: {session.reviewValues.elevation.trim()} m</Text>
+                    <Text style={styles.fieldLocationSavedValue}>
+                      Elevation: {formatElevationDisplay(session.reviewValues.elevation, session.reviewValues.elevation_unit)}
+                    </Text>
                   ) : null}
                   {fieldLocationStatus ? (
                     <Text

@@ -6,11 +6,12 @@ import { useProfileDraft } from '@/context/profile-draft-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { formatDraftToEngineText } from '@/utils/formatter';
 import { formatRawNotesFromServiceAsync, isFormatterServiceConfigured } from '@/utils/formatter-service';
+import { parseElevationMetadata } from '@/utils/profile-defaults';
 import { isPlotRenderServiceConfigured } from '@/utils/plot-render-service';
 import { getMetadataValue, parseFormattedProfile } from '@/utils/profile-document';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 import { createRenderedProfileDocumentAsync, PlotRenderError } from '@/utils/profile-renderer';
-import { hydrateStructuredValuesFromFormattedText } from '@/utils/structured-profile-values';
+import { hydrateStructuredValuesFromFormattedText, sanitizeStructuredValues } from '@/utils/structured-profile-values';
 import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
 import { deleteQueuedVoiceNoteAsync, persistQueuedVoiceNoteAsync } from '@/utils/voice-note-storage';
 import type { SavedProfile, VoiceNoteSession } from '@/types/profile';
@@ -175,19 +176,7 @@ function sanitizeSurfaceGrainValue(value: string) {
 }
 
 function sanitizeManualValues(values: Record<string, string>) {
-  const next = { ...values };
-  if (next.elevation) next.elevation = next.elevation.replace(/[^\d.]/g, '');
-  if (next.slope_angle) next.slope_angle = next.slope_angle.replace(/[^\d.]/g, '');
-  if (next.total_hs) next.total_hs = next.total_hs.replace(/[^\d.]/g, '');
-  if (next.foot_pen) next.foot_pen = next.foot_pen.replace(/[^\d.]/g, '');
-  if (next.ski_pen) next.ski_pen = next.ski_pen.replace(/[^\d.]/g, '');
-  if (next.air_temperature) next.air_temperature = next.air_temperature.replace(/[^\d.-]/g, '');
-  if (next.lat_long) next.lat_long = next.lat_long.replace(/\s+/g, ' ').trim();
-  if (next.sky) next.sky = sanitizeSkyValue(next.sky);
-  if (next.precip) next.precip = sanitizePrecipValue(next.precip);
-  if (next.wind) next.wind = sanitizeWindValue(next.wind);
-  if (next.surface_grain) next.surface_grain = sanitizeSurfaceGrainValue(next.surface_grain);
-  return next;
+  return sanitizeStructuredValues(values);
 }
 
 function normalizeGrainToken(token: string) {
@@ -452,7 +441,7 @@ function seedStructuredManualValuesFromSource(target: Record<string, string>, so
       return;
     }
     if (
-      /^(?:layer_\d+_(?:top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)|layer_count|temp_\d+_(?:depth|value)|temp_count|test_\d+_(?:type|result|taps|character|depth|pst_cut|pst_column)|test_count)$/.test(
+      /^(?:layer_\d+_(?:top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)|layer_count|temp_\d+_(?:depth|value)|temp_count|test_\d+_(?:type|result|taps|character|depth|pst_cut|pst_column)|test_count|elevation_unit)$/.test(
         key
       )
     ) {
@@ -549,7 +538,9 @@ function hydrateManualValuesForEdit(profile: SavedProfile) {
     setIfPresent(hydrated, 'time', getMetadataValue(parsed, 'Time'));
     setIfPresent(hydrated, 'observer', getMetadataValue(parsed, 'Observer'));
     setIfPresent(hydrated, 'organization', getMetadataValue(parsed, 'Organization'));
-    setIfPresent(hydrated, 'elevation', getMetadataValue(parsed, 'Elevation').replace(/[^\d.]/g, ''));
+    const elevationMetadata = parseElevationMetadata(getMetadataValue(parsed, 'Elevation'));
+    setIfPresent(hydrated, 'elevation', elevationMetadata.elevation);
+    setIfPresent(hydrated, 'elevation_unit', elevationMetadata.unit);
     setIfPresent(hydrated, 'aspect', getMetadataValue(parsed, 'Aspect').toLowerCase());
     setIfPresent(hydrated, 'slope_angle', getMetadataValue(parsed, 'Slope Angle').replace(/[^\d.]/g, ''));
     setIfPresent(hydrated, 'lat_long', getMetadataValue(parsed, 'Lat/Long'));

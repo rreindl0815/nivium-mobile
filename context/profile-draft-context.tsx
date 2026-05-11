@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
+import { useProfileDefaults } from '@/context/profile-defaults-context';
 import { fieldCardSections } from '@/data/field-card';
 import type { ProfileDraft } from '@/types/profile';
+import { buildDefaultProfileValues } from '@/utils/profile-defaults';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 import { formatVoiceNotesForEditing } from '@/utils/voice-notes-format';
 
@@ -28,36 +30,42 @@ type DraftContextValue = {
 
 const allFieldIds = fieldCardSections.flatMap((section) => section.fields.map((field) => field.id));
 
-const createDefaultDraft = (): ProfileDraft => ({
+const createDefaultDraft = (values: Record<string, string> = {}): ProfileDraft => ({
   rawNotes: '',
-  values: {},
+  values,
   updatedAt: new Date().toISOString(),
 });
 
 const DraftContext = createContext<DraftContextValue | null>(null);
 
 export function ProfileDraftProvider({ children }: { children: React.ReactNode }) {
-  const [draft, setDraft] = useState<ProfileDraft>(createDefaultDraft);
+  const { defaults, isLoaded: areDefaultsLoaded } = useProfileDefaults();
+  const [draft, setDraft] = useState<ProfileDraft>(() => createDefaultDraft(buildDefaultProfileValues(defaults)));
   const [isLoaded, setIsLoaded] = useState(false);
+  const hasInitializedRef = useRef(false);
   const writeVersionRef = useRef(0);
-  const draftRef = useRef<ProfileDraft>(createDefaultDraft());
+  const draftRef = useRef<ProfileDraft>(createDefaultDraft(buildDefaultProfileValues(defaults)));
 
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
 
   useEffect(() => {
-    let isMounted = true;
+    if (!areDefaultsLoaded || hasInitializedRef.current) {
+      return;
+    }
+    hasInitializedRef.current = true;
 
+    let isMounted = true;
     async function loadDraft() {
       try {
         await Promise.all(ALL_DRAFT_KEYS.map((key) => AsyncStorage.removeItem(key)));
         if (isMounted) {
-          setDraft(createDefaultDraft());
+          setDraft(createDefaultDraft(buildDefaultProfileValues(defaults)));
         }
       } catch {
         if (isMounted) {
-          setDraft(createDefaultDraft());
+          setDraft(createDefaultDraft(buildDefaultProfileValues(defaults)));
         }
       } finally {
         if (isMounted) {
@@ -71,7 +79,7 @@ export function ProfileDraftProvider({ children }: { children: React.ReactNode }
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [areDefaultsLoaded, defaults]);
 
   const persistDraft = async (nextDraft: ProfileDraft) => {
     const writeVersion = writeVersionRef.current + 1;
@@ -103,7 +111,7 @@ export function ProfileDraftProvider({ children }: { children: React.ReactNode }
       rawNotes: value,
       // Voice Notes should start from a clean field state to avoid
       // carrying stale MED/sample values into new AI-formatted runs.
-      values: {},
+      values: buildDefaultProfileValues(defaults),
       updatedAt: new Date().toISOString(),
     }));
   };
@@ -171,7 +179,7 @@ export function ProfileDraftProvider({ children }: { children: React.ReactNode }
 
   const loadFreshRawNotes = (value: string) => {
     void persistDraft({
-      ...createDefaultDraft(),
+      ...createDefaultDraft(buildDefaultProfileValues(defaults)),
       rawNotes: value,
       updatedAt: new Date().toISOString(),
     });
@@ -179,15 +187,15 @@ export function ProfileDraftProvider({ children }: { children: React.ReactNode }
 
   const loadFreshDraft = (next: { rawNotes?: string; values?: Record<string, string> }) => {
     void persistDraft({
-      ...createDefaultDraft(),
+      ...createDefaultDraft(buildDefaultProfileValues(defaults, next.values ?? {})),
       rawNotes: next.rawNotes ?? '',
-      values: next.values ?? {},
+      values: buildDefaultProfileValues(defaults, next.values ?? {}),
       updatedAt: new Date().toISOString(),
     });
   };
 
   const resetDraft = async () => {
-    const nextDraft = createDefaultDraft();
+    const nextDraft = createDefaultDraft(buildDefaultProfileValues(defaults));
     writeVersionRef.current += 1;
     setDraft(nextDraft);
     await Promise.all(ALL_DRAFT_KEYS.map((key) => AsyncStorage.removeItem(key)));

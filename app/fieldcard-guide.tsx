@@ -3,7 +3,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 
 import { fieldCardSections } from '@/data/field-card';
 
-const voiceNotesHiddenMetadataFields = new Set(['elevation', 'lat_long']);
+const voiceNotesHiddenMetadataFields = new Set(['date', 'time', 'elevation_unit', 'elevation', 'lat_long']);
 
 function getDisplaySectionTitle(sectionId: string, fallbackTitle: string) {
   if (sectionId === 'metadata') {
@@ -14,7 +14,7 @@ function getDisplaySectionTitle(sectionId: string, fallbackTitle: string) {
 
 const guideLines: Record<string, string[]> = {
   metadata: [
-    'Say the date and time first.',
+    'Date and time are prefilled when Voice Notes opens.',
     'State run name or location, observer, and organization.',
     'Give aspect and slope angle.',
     'Save elevation and lat / long from Field Location on the Voice Notes screen if needed.',

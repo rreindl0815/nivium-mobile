@@ -90,9 +90,10 @@ export function getActualLayerCount(values: FieldValueMap) {
 export function buildLayerOverview(values: FieldValueMap, index: number) {
   const top = index === 1 ? values[`layer_${index}_top`] ?? '0' : values[`layer_${index - 1}_bottom`] ?? '';
   const bottom = values[`layer_${index}_bottom`] ?? '';
-  const hardness = [values[`layer_${index}_hardness_1`] ?? '', values[`layer_${index}_hardness_2`] ?? '']
-    .filter(Boolean)
-    .join('-');
+  const hardness1 = values[`layer_${index}_hardness_1`] ?? '';
+  const rawHardness2 = values[`layer_${index}_hardness_2`] ?? '';
+  const hardness2 = rawHardness2 && rawHardness2 === hardness1 ? '' : rawHardness2;
+  const hardness = [hardness1, hardness2].filter(Boolean).join('-');
   const primary = [values[`layer_${index}_grain_1`] ?? '', normalizeStructuredSizeLabel(values[`layer_${index}_size_1`] ?? '')]
     .filter(Boolean)
     .join(' ');

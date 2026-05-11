@@ -15,7 +15,9 @@ export function extractDraftValuesFromRawNotes(rawNotes: string): ParsedDraftVal
   assign(values, 'run_name', matchLatestField(text, [/run name[: ,]+(.+?)(?=observer[: ,]|server[: ,]|organization[: ,]|elevation[: ,]|aspect[: ,]|$)/gi]));
   assign(values, 'observer', normalizeObserver(matchLatestField(text, [/\bobserver(?:\(s\))?[: ,]+(.+?)(?=organization[: ,]|elevation[: ,]|aspect[: ,]|$)/gi, /\bserver[: ,]+(.+?)(?=organization[: ,]|elevation[: ,]|aspect[: ,]|$)/gi])));
   assign(values, 'organization', normalizeOrganization(matchLatestField(text, [/\borganization[: ,]+(.+?)(?=elevation[: ,]|aspect[: ,]|$)/gi])));
-  assign(values, 'elevation', matchLatestField(text, [/\belevation[: ,]+([0-9,]+)/gi]));
+  const elevation = extractElevationValue(text);
+  assign(values, 'elevation', elevation.value);
+  assign(values, 'elevation_unit', elevation.unit);
   assign(values, 'aspect', normalizeAspect(matchLatestField(text, [/\baspect[: ,]+(.+?)(?=\.|slope angle[: ,]|lat|air temperature[: ,]|correction[: ,]|$)/gi])));
   assign(values, 'slope_angle', matchLatestField(text, [/\bslope angle[: ,]+([0-9]+)/gi]));
   assign(values, 'lat_long', extractLatLong(text));
@@ -738,6 +740,17 @@ function extractTimeFromDate(value: string) {
     return '';
   }
   return normalizeTime(match[1]);
+}
+
+function extractElevationValue(value: string) {
+  const match = [...value.matchAll(/\belevation[: ,]+([0-9,]+)\s*(feet|foot|ft|meters?|metres?|m)?/gi)].at(-1);
+  if (!match) {
+    return { value: '', unit: '' };
+  }
+  return {
+    value: match[1].trim(),
+    unit: /\b(?:feet|foot|ft)\b/i.test(match[2] ?? '') ? 'ft' : 'm',
+  };
 }
 
 function normalizeTime(value: string) {

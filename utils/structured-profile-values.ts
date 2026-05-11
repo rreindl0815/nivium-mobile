@@ -1,4 +1,5 @@
 import { getMetadataValue, parseFormattedProfile } from '@/utils/profile-document';
+import { normalizeElevationUnit, parseElevationMetadata } from '@/utils/profile-defaults';
 
 const LAYER_GRAIN_CODES = new Set(['PP', 'DF', 'RG', 'FC', 'FCxr', 'SH', 'DH', 'MF', 'IF', 'IFrc', 'MFcr']);
 const LAYER_HARDNESS_CODES = new Set(['F', 'F+', '4F', '4F+', '1F', '1F+', 'P', 'P+', 'K', 'K+', 'I']);
@@ -124,8 +125,23 @@ function sanitizeSurfaceGrainValue(value: string) {
   return token;
 }
 
+function normalizeStructuredCtResult(result: string, taps: string) {
+  const normalized = result.trim().toLowerCase();
+  if (normalized === 'easy' || normalized === 'moderate' || normalized === 'hard' || normalized === 'auto') {
+    return normalized;
+  }
+
+  const numericTaps = Number(taps);
+  if (Number.isFinite(numericTaps) && numericTaps >= 1 && numericTaps <= 30) {
+    return 'auto';
+  }
+
+  return '';
+}
+
 export function sanitizeStructuredValues(values: Record<string, string>) {
   const next = { ...values };
+  if (next.elevation_unit) next.elevation_unit = normalizeElevationUnit(next.elevation_unit);
   if (next.elevation) next.elevation = next.elevation.replace(/[^\d.]/g, '');
   if (next.slope_angle) next.slope_angle = next.slope_angle.replace(/[^\d.]/g, '');
   if (next.total_hs) next.total_hs = next.total_hs.replace(/[^\d.]/g, '');
@@ -137,6 +153,24 @@ export function sanitizeStructuredValues(values: Record<string, string>) {
   if (next.precip) next.precip = sanitizePrecipValue(next.precip);
   if (next.wind) next.wind = sanitizeWindValue(next.wind);
   if (next.surface_grain) next.surface_grain = sanitizeSurfaceGrainValue(next.surface_grain);
+  for (let index = 1; index <= 12; index += 1) {
+    const hardness1Key = `layer_${index}_hardness_1`;
+    const hardness2Key = `layer_${index}_hardness_2`;
+    const hardness1 = next[hardness1Key]?.trim() ?? '';
+    const hardness2 = next[hardness2Key]?.trim() ?? '';
+    if (hardness1 && hardness1 === hardness2) {
+      next[hardness2Key] = '';
+    }
+  }
+  for (let index = 1; index <= 12; index += 1) {
+    const type = next[`test_${index}_type`]?.trim() ?? '';
+    if (type !== 'CT') {
+      continue;
+    }
+    const resultKey = `test_${index}_result`;
+    const taps = next[`test_${index}_taps`]?.trim() ?? '';
+    next[resultKey] = normalizeStructuredCtResult(next[resultKey] ?? '', taps);
+  }
   return next;
 }
 
@@ -357,10 +391,13 @@ function parseStabilityLine(line: string) {
       }
     }
     if (type === 'CT' && !test.taps) {
-      const ctCompact = normalized.match(/\bCT(?:E|M|H)?\s*(\d{1,2})\b/i);
+      const ctCompact = normalized.match(/\bCT(?:[A-Z]+)?\s*(\d{1,2})\b/i);
       if (ctCompact?.[1]) {
         test.taps = ctCompact[1];
       }
+    }
+    if (type === 'CT') {
+      test.result = normalizeStructuredCtResult(test.result, test.taps);
     }
   } else if (type === 'ECT') {
     const ect = normalized.match(/\bECT\s*([NPX])\s*\d*\b/i)?.[1]?.toUpperCase();
@@ -404,7 +441,7 @@ function seedStructuredValuesFromSource(
       return;
     }
     if (
-      /^(?:date|time|run_name|observer|organization|elevation|aspect|slope_angle|lat_long|air_temperature|sky|precip|wind|total_hs|surface_grain|foot_pen|ski_pen|comments|layer_\d+_(?:top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)|layer_count|temp_\d+_(?:depth|value)|temp_count|test_\d+_(?:type|result|taps|character|depth|pst_cut|pst_column)|test_count)$/.test(
+      /^(?:date|time|run_name|observer|organization|elevation|elevation_unit|aspect|slope_angle|lat_long|air_temperature|sky|precip|wind|total_hs|surface_grain|foot_pen|ski_pen|comments|layer_\d+_(?:top|bottom|grain_[12]|hardness_[12]|size_[12]|comment|concern)|layer_count|temp_\d+_(?:depth|value)|temp_count|test_\d+_(?:type|result|taps|character|depth|pst_cut|pst_column)|test_count)$/.test(
         key
       )
     ) {
@@ -474,7 +511,9 @@ export function hydrateStructuredValuesFromFormattedText(
     setIfPresent(hydrated, 'time', getMetadataValue(parsed, 'Time'));
     setIfPresent(hydrated, 'observer', getMetadataValue(parsed, 'Observer'));
     setIfPresent(hydrated, 'organization', getMetadataValue(parsed, 'Organization'));
-    setIfPresent(hydrated, 'elevation', getMetadataValue(parsed, 'Elevation').replace(/[^\d.]/g, ''));
+    const elevationMetadata = parseElevationMetadata(getMetadataValue(parsed, 'Elevation'));
+    setIfPresent(hydrated, 'elevation', elevationMetadata.elevation);
+    setIfPresent(hydrated, 'elevation_unit', elevationMetadata.unit);
     setIfPresent(hydrated, 'aspect', getMetadataValue(parsed, 'Aspect').toLowerCase());
     setIfPresent(hydrated, 'slope_angle', getMetadataValue(parsed, 'Slope Angle').replace(/[^\d.]/g, ''));
     setIfPresent(hydrated, 'lat_long', getMetadataValue(parsed, 'Lat/Long'));

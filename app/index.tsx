@@ -32,6 +32,13 @@ const outputActions = [
   },
 ] as const;
 
+const utilityAction = {
+  route: '/profile-defaults',
+  eyebrow: 'Defaults',
+  title: 'Profile Defaults',
+  subtitle: 'Observer, organization, elevation unit',
+} as const;
+
 export default function HomeScreen() {
   const router = useRouter();
   const { isPaid } = useAppAccess();
@@ -130,6 +137,26 @@ export default function HomeScreen() {
             </Pressable>
           ))}
         </View>
+
+        <Pressable
+          onPress={() => router.push(utilityAction.route)}
+          style={({ pressed }) => [
+            styles.utilityShell,
+            { transform: [{ scale: pressed ? 0.985 : 1 }, { translateY: pressed ? 2 : 0 }] },
+          ]}>
+          <View style={styles.utilityHighlight} />
+          <View style={styles.utilityFrame}>
+            <View style={styles.utilityCard}>
+              <View style={styles.utilityAccent} />
+              <View style={styles.utilityCopy}>
+                <Text style={styles.utilityEyebrow}>{utilityAction.eyebrow}</Text>
+                <Text style={styles.utilityTitle}>{utilityAction.title}</Text>
+                <Text style={styles.utilitySubtitle}>{utilityAction.subtitle}</Text>
+              </View>
+              <Text style={styles.utilityArrow}>→</Text>
+            </View>
+          </View>
+        </Pressable>
 
       </ScrollView>
     </SafeAreaView>
@@ -374,5 +401,83 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  utilityShell: {
+    borderRadius: 8,
+    padding: 3,
+    backgroundColor: '#06080B',
+    shadowColor: '#091827',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  utilityHighlight: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    right: 3,
+    height: 7,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  utilityFrame: {
+    borderRadius: 5,
+    padding: 2,
+    backgroundColor: '#20384D',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(255,255,255,0.22)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.14)',
+    borderRightWidth: 2,
+    borderRightColor: 'rgba(7,20,36,0.34)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(7,20,36,0.5)',
+  },
+  utilityCard: {
+    minHeight: 94,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    backgroundColor: '#DCE7EE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  utilityAccent: {
+    width: 8,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+    backgroundColor: '#876A46',
+  },
+  utilityCopy: {
+    flex: 1,
+  },
+  utilityEyebrow: {
+    color: '#876A46',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  utilityTitle: {
+    marginTop: 6,
+    color: '#1F3443',
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: '800',
+  },
+  utilitySubtitle: {
+    marginTop: 6,
+    color: '#516674',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  utilityArrow: {
+    color: '#20384D',
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '800',
   },
 });

@@ -272,31 +272,35 @@ def norm(s:str)->str:
     return re.sub(r'\s+',' ', s.strip().lower())
 
 def parse_temps(text: str) -> List[Tuple[float,float]]:
-    """Parse snow temperature points conservatively to avoid zigzags from stray numbers."""
+    """Parse engine-style snow temperature lines without reading layer ranges as temperatures."""
     temps: List[Tuple[float,float]] = []
     for raw in text.splitlines():
-        line = raw.strip().lower()
+        line = re.sub(r'\s+', ' ', raw.strip().lower()).strip(' ,;')
         if not line:
             continue
-        if ("surface" not in line) and ("cm" not in line) and ("minus" not in line) and (not line.startswith("-")):
+        if line in {"temperature profile", "temperature profile:", "temperature", "temperature:"}:
             continue
 
-        # depth-first: 30cm minus 8  OR 30-8
-        for mm in re.finditer(r'(?<!\d)(\d+(?:\.\d+)?)\s*(?:cm)?\s*(?:-|minus)\s*([0-9]+(?:\.[0-9]+)?)\b', line):
-            d=float(mm.group(1))
-            t=-abs(float(mm.group(2)))
-            temps.append((d,t))
-
-        # surface: "-12 at surface"
-        ms=re.search(r'(?:minus\s*)?(-?\s*[0-9]+(?:\.[0-9]+)?)\s*(?:at\s*)?surface\b', line)
+        # surface: "-12 surface" / "-12 at surface"
+        ms=re.fullmatch(r'(?:temperature\s*:?\s*)?(?:minus\s*)?(-?\s*[0-9]+(?:\.[0-9]+)?)\s*(?:at\s*)?surface', line)
         if ms:
             temps.append((0.0, -abs(float(ms.group(1)))))
+            continue
 
         # temp-first: "-10 30cm" / "minus 10 30 cm"
-        mt=re.search(r'^(?:temperature\s*)?(?:minus\s*)?(-?\s*[0-9]+(?:\.[0-9]+)?)\s+(\d+)\s*(?:cm)?\b', line)
+        mt=re.fullmatch(r'(?:temperature\s*:?\s*)?(?:minus\s*)?(-?\s*[0-9]+(?:\.[0-9]+)?)\s+(\d+(?:\.\d+)?)\s*cm', line)
         if mt:
             temp=-abs(float(mt.group(1)))
             depth=float(mt.group(2))
+            if 0 <= depth <= 600 and abs(temp) <= 60:
+                temps.append((depth,temp))
+            continue
+
+        # depth-first: "30cm minus 8" / "30 cm -8"
+        md=re.fullmatch(r'(?:temperature\s*:?\s*)?(\d+(?:\.\d+)?)\s*cm\s*(?:-|minus)\s*([0-9]+(?:\.\d+)?)', line)
+        if md:
+            depth=float(md.group(1))
+            temp=-abs(float(md.group(2)))
             if 0 <= depth <= 600 and abs(temp) <= 60:
                 temps.append((depth,temp))
 
@@ -565,8 +569,10 @@ def parse_dictation(text:str)->ProfileData:
     grab_token("Date","date"); grab_token("Time","time"); grab_token("Observer","observer"); grab_token("Organization","org")
     grab_token("Run Name","run_name")
     for tok in tokens:
-        m=re.search(r'\bElevation\b\s*:?\s*([0-9,]+)\s*(?:m|meter|meters|metre|metres)\b', tok, flags=re.I)
-        if m: md["elevation"]=m.group(1).replace(",","")+" m"
+        m=re.search(r'\bElevation\b\s*:?\s*([0-9,]+)\s*(m|meter|meters|metre|metres|ft|feet|foot)\b', tok, flags=re.I)
+        if m:
+            unit = "ft" if re.match(r'^(?:ft|feet|foot)$', m.group(2), flags=re.I) else "m"
+            md["elevation"]=m.group(1).replace(",","")+f" {unit}"
         m=re.search(r'\bAspect\b\s*:?\s*([A-Za-z]+)', tok, flags=re.I)
         if m: md["aspect"]=m.group(1).capitalize()
         m=re.search(r'\bSlope\s*angle\b\s*:?\s*([0-9]+)', tok, flags=re.I)

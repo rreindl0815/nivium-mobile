@@ -20,6 +20,19 @@ export function SelectorField({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const renderedOptions: SelectorOption[] = clearOptionLabel ? [clearOptionLabel, ...options] : [...options];
+  const selectedOption = renderedOptions.find((option) => {
+    const optionValue = typeof option === 'string' ? option : option.value;
+    const isClearOption = clearOptionLabel && optionValue === clearOptionLabel;
+    return isClearOption ? !value : value === optionValue;
+  });
+  const selectedLabel =
+    !value && clearOptionLabel
+      ? ''
+      : selectedOption
+        ? typeof selectedOption === 'string'
+          ? selectedOption
+          : selectedOption.label
+        : value;
 
   return (
     <View style={styles.selectorField}>
@@ -32,7 +45,7 @@ export function SelectorField({
             numberOfLines={1}
             ellipsizeMode="tail"
             style={[styles.selectorValue, !value ? styles.selectorPlaceholder : null]}>
-            {value || placeholder}
+            {selectedLabel || placeholder}
           </Text>
           <Text style={styles.selectorChevron}>{isOpen ? '▲' : '▼'}</Text>
         </View>

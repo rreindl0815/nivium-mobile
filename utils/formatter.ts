@@ -1,4 +1,5 @@
 import type { ProfileDraft } from '@/types/profile';
+import { formatElevationDisplay } from '@/utils/profile-defaults';
 import { extractDraftValuesFromRawNotes } from '@/utils/raw-note-parser';
 
 type FormatResult = {
@@ -19,7 +20,7 @@ const metadataConfig: MetadataConfigItem[] = [
   { fieldId: 'run_name', label: 'Run Name' },
   { fieldId: 'observer', label: 'Observer' },
   { fieldId: 'organization', label: 'Organization', transform: normalizeOrganization },
-  { fieldId: 'elevation', label: 'Elevation', suffix: ' m', transform: stripNumberFormatting },
+  { fieldId: 'elevation', label: 'Elevation', transform: stripNumberFormatting },
   { fieldId: 'aspect', label: 'Aspect', transform: normalizeAspect },
   { fieldId: 'slope_angle', label: 'Slope Angle', suffix: ' degrees' },
   { fieldId: 'lat_long', label: 'Lat/Long', transform: normalizeLatLong },
@@ -72,7 +73,10 @@ export function formatDraftToEngineText(draft: ProfileDraft): FormatResult {
       }
 
       const transformed = item.transform ? item.transform(rawValue) : rawValue;
-      const value = applySuffix(transformed, item.suffix);
+      const value =
+        item.fieldId === 'elevation'
+          ? formatElevationDisplay(transformed, draft.values.elevation_unit)
+          : applySuffix(transformed, item.suffix);
       return `${item.label}: ${value}`;
     })
     .filter((value): value is string => Boolean(value));
@@ -144,7 +148,8 @@ function buildStructuredLayerLines(values: ProfileDraft['values']) {
     const topField = values[`layer_${index}_top`]?.trim() ?? '';
     const bottomField = values[`layer_${index}_bottom`]?.trim() ?? '';
     const hardness1 = values[`layer_${index}_hardness_1`]?.trim() ?? '';
-    const hardness2 = values[`layer_${index}_hardness_2`]?.trim() ?? '';
+    const rawHardness2 = values[`layer_${index}_hardness_2`]?.trim() ?? '';
+    const hardness2 = rawHardness2 && rawHardness2 === hardness1 ? '' : rawHardness2;
     const grain1 = values[`layer_${index}_grain_1`]?.trim() ?? '';
     const grain2 = values[`layer_${index}_grain_2`]?.trim() ?? '';
     const size1 = normalizeStructuredSize(values[`layer_${index}_size_1`] ?? '');
@@ -396,24 +401,40 @@ function buildStructuredStabilityBlock(values: ProfileDraft['values']) {
 }
 
 function resolveCtResultLetter(result: string, taps: string) {
-  if (result === 'auto') {
-    const numericTaps = Number(taps);
-    if (!Number.isFinite(numericTaps)) {
-      return '';
-    }
-    if (numericTaps >= 1 && numericTaps <= 10) {
-      return 'E';
-    }
-    if (numericTaps >= 11 && numericTaps <= 20) {
-      return 'M';
-    }
-    if (numericTaps >= 21 && numericTaps <= 30) {
-      return 'H';
-    }
-    return '';
+  const normalized = result.trim().toLowerCase();
+  const derivedFromTaps = resolveCtResultLetterFromTaps(taps);
+
+  if (normalized === 'auto') {
+    return derivedFromTaps;
+  }
+  if (normalized === 'easy') {
+    return 'E';
+  }
+  if (normalized === 'moderate') {
+    return 'M';
+  }
+  if (normalized === 'hard') {
+    return 'H';
   }
 
-  return result[0]?.toUpperCase() ?? '';
+  return derivedFromTaps;
+}
+
+function resolveCtResultLetterFromTaps(taps: string) {
+  const numericTaps = Number(taps);
+  if (!Number.isFinite(numericTaps)) {
+    return '';
+  }
+  if (numericTaps >= 1 && numericTaps <= 10) {
+    return 'E';
+  }
+  if (numericTaps >= 11 && numericTaps <= 20) {
+    return 'M';
+  }
+  if (numericTaps >= 21 && numericTaps <= 30) {
+    return 'H';
+  }
+  return '';
 }
 
 function normalizeOrganization(value: string) {

@@ -7,7 +7,7 @@ export const observationGroups = [
   },
   {
     title: 'Location',
-    fields: ['elevation', 'lat_long', 'aspect', 'slope_angle'],
+    fields: ['elevation_unit', 'elevation', 'lat_long', 'aspect', 'slope_angle'],
   },
   {
     title: 'Weather',
