@@ -16,7 +16,7 @@
       }
     },
     "android": {
-      "package": "ca.nivium.app",
+      "package": "ca.nivium.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
