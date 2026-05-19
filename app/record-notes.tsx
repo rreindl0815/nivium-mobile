@@ -12,8 +12,6 @@ import { convertMetersToElevationUnit, formatElevationDisplay, normalizeElevatio
 import { transcribeAudioFromServiceAsync } from '@/utils/transcribe-service';
 const metadataLines = [
   'Run Name / Location __________',
-  'Observer(s) __________',
-  'Organization __________',
   'Aspect __________',
   'Slope Angle _____ degrees',
   'Air Temperature _____ C',
@@ -77,7 +75,7 @@ const extraNotesLines = ['____________________'];
 function getFieldcardSectionTitle(sectionId: 'metadata' | 'layers' | 'temperature' | 'stability' | 'notes') {
   switch (sectionId) {
     case 'metadata':
-      return 'Observation Details';
+      return 'Observation Details (optional)';
     default:
       return '';
   }
@@ -534,7 +532,7 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
           </View>
 
           <View style={styles.guideSection}>
-            <Text style={styles.guideSectionTitle}>Temperature</Text>
+            <Text style={styles.guideSectionTitle}>Temperature (optional)</Text>
             {temperatureLines.map((line) => (
               <Text key={line} style={styles.fieldLine}>
                 {line}
@@ -543,7 +541,7 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
           </View>
 
           <View style={styles.guideSection}>
-            <Text style={styles.guideSectionTitle}>Stability Test</Text>
+            <Text style={styles.guideSectionTitle}>Stability Test (optional)</Text>
             {stabilityBlocks.map((block) =>
               block.length === 1 ? (
                 <Text key={block[0]} style={styles.stabilitySampleLine}>
@@ -562,7 +560,7 @@ const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { com
             )}
           </View>
           <View style={styles.guideSection}>
-            <Text style={styles.guideSectionTitle}>Extra Notes</Text>
+            <Text style={styles.guideSectionTitle}>Extra Notes (optional)</Text>
             {extraNotesLines.map((line, index) => (
               <Text key={`extra-notes-line-${index}`} style={styles.fieldLine}>
                 {line}

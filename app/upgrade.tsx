@@ -1,16 +1,51 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef } from 'react';
 import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
+import { useAuth } from '@/context/auth-context';
+
+function getSingleParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function buildResumeUpgradePath(feature: string, returnTo: string | undefined) {
+  const query = new URLSearchParams();
+  query.set('feature', feature);
+  if (returnTo) {
+    query.set('returnTo', returnTo);
+  }
+  query.set('resumePaywall', '1');
+  return `/upgrade?${query.toString()}`;
+}
 
 export default function UpgradeScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ feature?: string; returnTo?: string }>();
-  const { accessSource, presentPaywall, purchasesConfigured, restorePurchases } = useAppAccess();
-  const feature = params.feature ?? 'This feature';
+  const params = useLocalSearchParams<{ feature?: string; returnTo?: string; resumePaywall?: string }>();
+  const { accessSource, presentPaywall, purchasesConfigured, restorePurchases, revenueCatIdentityReady } = useAppAccess();
+  const { authConfigured, isAuthenticated, isLoaded: authLoaded, user } = useAuth();
+  const feature = getSingleParam(params.feature) ?? 'This feature';
+  const returnTo = getSingleParam(params.returnTo);
+  const resumePaywall = getSingleParam(params.resumePaywall) === '1';
+  const autoOpenedRef = useRef(false);
 
   const handlePaidAccess = () => {
     void (async () => {
+      if (!authConfigured) {
+        Alert.alert('Account Unavailable', 'Nivium account sign-in is not configured in this build yet.');
+        return;
+      }
+
+      if (!isAuthenticated) {
+        router.push({
+          pathname: '/create-account' as never,
+          params: {
+            next: buildResumeUpgradePath(feature, returnTo),
+          },
+        });
+        return;
+      }
+
       if (!purchasesConfigured) {
         Alert.alert(
           'Purchases Unavailable',
@@ -19,11 +54,16 @@ export default function UpgradeScreen() {
         return;
       }
 
+      if (!revenueCatIdentityReady) {
+        Alert.alert('Account Syncing', 'Please wait a moment while Nivium connects your account before purchase.');
+        return;
+      }
+
       try {
         const unlocked = await presentPaywall();
         if (unlocked) {
-          if (params.returnTo) {
-            router.replace(params.returnTo as never);
+          if (returnTo) {
+            router.replace(returnTo as never);
             return;
           }
           router.replace('/');
@@ -41,6 +81,21 @@ export default function UpgradeScreen() {
 
   const handleRestorePurchases = () => {
     void (async () => {
+      if (!authConfigured) {
+        Alert.alert('Restore Unavailable', 'Nivium account sign-in is not configured in this build yet.');
+        return;
+      }
+
+      if (!isAuthenticated) {
+        router.push({
+          pathname: '/sign-in' as never,
+          params: {
+            next: buildResumeUpgradePath(feature, returnTo),
+          },
+        });
+        return;
+      }
+
       if (!purchasesConfigured) {
         Alert.alert(
           'Restore Unavailable',
@@ -58,8 +113,8 @@ export default function UpgradeScreen() {
             : 'We could not find an active paid entitlement for this account.'
         );
         if (restored) {
-          if (params.returnTo) {
-            router.replace(params.returnTo as never);
+          if (returnTo) {
+            router.replace(returnTo as never);
             return;
           }
           router.replace('/');
@@ -69,6 +124,45 @@ export default function UpgradeScreen() {
       }
     })();
   };
+
+  useEffect(() => {
+    if (autoOpenedRef.current || !resumePaywall || !authLoaded || !isAuthenticated || !revenueCatIdentityReady) {
+      return;
+    }
+    autoOpenedRef.current = true;
+    void (async () => {
+      if (!authConfigured) {
+        Alert.alert('Account Unavailable', 'Nivium account sign-in is not configured in this build yet.');
+        return;
+      }
+
+      if (!purchasesConfigured) {
+        Alert.alert(
+          'Purchases Unavailable',
+          'Paid plans are temporarily unavailable in this build. Please try again shortly.'
+        );
+        return;
+      }
+
+      try {
+        const unlocked = await presentPaywall();
+        if (unlocked) {
+          if (returnTo) {
+            router.replace(returnTo as never);
+            return;
+          }
+          router.replace('/');
+          return;
+        }
+        Alert.alert(
+          'Paid Access Not Active Yet',
+          'No active paid entitlement was found yet. Please complete purchase or tap Restore Purchases.'
+        );
+      } catch {
+        Alert.alert('Unable To Open Paywall', 'Please try again in a moment.');
+      }
+    })();
+  }, [authConfigured, authLoaded, isAuthenticated, presentPaywall, purchasesConfigured, resumePaywall, returnTo, revenueCatIdentityReady, router]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -95,13 +189,18 @@ export default function UpgradeScreen() {
             <Text style={styles.modeCopy}>
               Current access: {accessSource === 'subscription' ? 'Paid Subscription' : 'Free'}
             </Text>
+            <Text style={styles.modeCopy}>
+              Account: {authConfigured ? (isAuthenticated ? user?.email ?? 'Signed in' : 'Create your Nivium account before purchase') : 'Unavailable in this build'}
+            </Text>
 
             <View style={styles.actionStack}>
               <Pressable onPress={handlePaidAccess} style={styles.primaryShell}>
                 <View style={styles.primaryHighlight} />
                 <View style={styles.primaryFrame}>
                   <View style={styles.primaryButton}>
-                    <Text style={styles.primaryText}>View Paid Access</Text>
+                    <Text style={styles.primaryText}>
+                      {!isAuthenticated ? 'Create Account to Continue' : revenueCatIdentityReady ? 'View Paid Access' : 'Connecting Account...'}
+                    </Text>
                   </View>
                 </View>
               </Pressable>

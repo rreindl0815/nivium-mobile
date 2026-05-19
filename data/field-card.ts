@@ -10,8 +10,6 @@ export const fieldCardSections: FieldSection[] = [
       { id: 'date', label: 'Date', placeholder: 'Say: Date April 19, 2026' },
       { id: 'time', label: 'Time', placeholder: 'Say: Time 9:45' },
       { id: 'run_name', label: 'Run Name / Location', placeholder: 'Enter run/location name' },
-      { id: 'observer', label: 'Observer(s)', placeholder: 'Enter observer names' },
-      { id: 'organization', label: 'Organization', placeholder: 'Enter organization' },
       { id: 'elevation_unit', label: 'Elevation Unit', placeholder: 'Choose unit', options: ['m', 'ft'] },
       { id: 'elevation', label: 'Elevation', placeholder: 'Enter elevation', keyboardType: 'numeric' },
       { id: 'lat_long', label: 'Lat / Long', placeholder: 'Enter latitude and longitude' },
@@ -66,7 +64,6 @@ export const fieldCardSections: FieldSection[] = [
 export const requiredFieldIds = [
   'date',
   'run_name',
-  'observer',
   'aspect',
   'total_hs',
 ];

@@ -7,7 +7,16 @@ const voiceNotesHiddenMetadataFields = new Set(['date', 'time', 'elevation_unit'
 
 function getDisplaySectionTitle(sectionId: string, fallbackTitle: string) {
   if (sectionId === 'metadata') {
-    return 'Observation Details';
+    return 'Observation Details (optional)';
+  }
+  if (sectionId === 'temperatures') {
+    return 'Temperature (optional)';
+  }
+  if (sectionId === 'tests') {
+    return 'Stability Test (optional)';
+  }
+  if (sectionId === 'notes') {
+    return 'Extra Notes (optional)';
   }
   return fallbackTitle;
 }
@@ -15,7 +24,7 @@ function getDisplaySectionTitle(sectionId: string, fallbackTitle: string) {
 const guideLines: Record<string, string[]> = {
   metadata: [
     'Date and time are prefilled when Voice Notes opens.',
-    'State run name or location, observer, and organization.',
+    'State run name or location.',
     'Give aspect and slope angle.',
     'Save elevation and lat / long from Field Location on the Voice Notes screen if needed.',
     'Finish with air temperature, sky, precip, wind, total Hs, and surface grain.',

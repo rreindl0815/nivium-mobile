@@ -14,18 +14,23 @@ import {
 } from 'react-native';
 
 import { SelectorField } from '@/components/profile-editor/selector-field';
+import { useAuth } from '@/context/auth-context';
 import { useProfileDefaults } from '@/context/profile-defaults-context';
 import { elevationUnitOptions, normalizeElevationUnit } from '@/utils/profile-defaults';
 
 export default function ProfileDefaultsScreen() {
   const router = useRouter();
+  const { authConfigured, isAuthenticated, isBusy: authBusy, submitUpdatesSignup, user } = useAuth();
   const { defaults, isLoaded, saveDefaults } = useProfileDefaults();
   const [observerDefault, setObserverDefault] = useState('');
   const [organizationDefault, setOrganizationDefault] = useState('');
   const [elevationUnitDefault, setElevationUnitDefault] = useState<'m' | 'ft'>('m');
   const [saveMessage, setSaveMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [updatesEmail, setUpdatesEmail] = useState('');
+  const [updatesMessage, setUpdatesMessage] = useState('');
   const saveButtonLabel = isSaving ? 'Saving...' : saveMessage ? 'Saved' : 'Save Defaults';
+  const updatesButtonLabel = authBusy ? 'Saving...' : updatesMessage ? 'Saved' : 'Save Optional Email';
 
   useEffect(() => {
     if (!isLoaded) {
@@ -35,6 +40,12 @@ export default function ProfileDefaultsScreen() {
     setOrganizationDefault(defaults.organizationDefault);
     setElevationUnitDefault(normalizeElevationUnit(defaults.elevationUnitDefault));
   }, [defaults, isLoaded]);
+
+  useEffect(() => {
+    if (isAuthenticated && user?.email) {
+      setUpdatesEmail(user.email);
+    }
+  }, [isAuthenticated, user?.email]);
 
   const handleSave = () => {
     if (isSaving) {
@@ -52,6 +63,25 @@ export default function ProfileDefaultsScreen() {
         setSaveMessage('Saved. New profiles will use these defaults.');
       } finally {
         setIsSaving(false);
+      }
+    })();
+  };
+
+  const handleSaveUpdates = () => {
+    if (authBusy || !authConfigured) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        setUpdatesMessage('');
+        await submitUpdatesSignup({
+          email: updatesEmail,
+          source: 'profile-defaults',
+        });
+        setUpdatesMessage('Saved. We will only send occasional Nivium updates.');
+      } catch (error) {
+        setUpdatesMessage(error instanceof Error ? error.message : 'Unable to save optional email.');
       }
     })();
   };
@@ -146,6 +176,64 @@ export default function ProfileDefaultsScreen() {
               </View>
             </View>
           </View>
+
+          {authConfigured ? (
+            <View style={styles.cardShell}>
+              <View style={styles.cardHighlight} />
+              <View style={styles.card}>
+                <View style={styles.cardAccent} />
+                <Text style={styles.cardTitle}>{isAuthenticated ? 'Account & Updates' : 'Optional Updates'}</Text>
+                <Text style={styles.cardCopy}>
+                  {isAuthenticated
+                    ? 'Your Nivium account keeps paid access tied to your email and gives you a simple place to restore purchases.'
+                    : 'Optional email for occasional Nivium updates. Just the important stuff, never ads, and you can unsubscribe anytime.'}
+                </Text>
+
+                {isAuthenticated ? (
+                  <View style={styles.accountCard}>
+                    <Text style={styles.accountLabel}>Signed in as</Text>
+                    <Text style={styles.accountValue}>{user?.email}</Text>
+                    <Pressable onPress={() => router.push('/account' as never)} style={styles.primaryShell}>
+                      <View style={styles.primaryHighlight} />
+                      <View style={styles.primaryFrame}>
+                        <View style={styles.primaryButton}>
+                          <Text style={styles.primaryText}>Open Account</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={styles.fieldStack}>
+                    <View style={styles.field}>
+                      <Text style={styles.fieldLabel}>Optional Email</Text>
+                      <TextInput
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="email-address"
+                        onChangeText={(next) => {
+                          setUpdatesEmail(next);
+                          setUpdatesMessage('');
+                        }}
+                        placeholder="name@example.com"
+                        placeholderTextColor="#8EA3B3"
+                        style={styles.fieldInput}
+                        value={updatesEmail}
+                      />
+                    </View>
+                    {updatesMessage ? <Text style={styles.helperText}>{updatesMessage}</Text> : null}
+                    <Pressable onPress={handleSaveUpdates} disabled={authBusy} style={styles.primaryShell}>
+                      <View style={styles.primaryHighlight} />
+                      <View style={styles.primaryFrame}>
+                        <View style={[styles.primaryButton, authBusy ? styles.primaryButtonDisabled : null]}>
+                          <Text style={styles.primaryText}>{updatesButtonLabel}</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            </View>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </>
@@ -264,6 +352,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  accountCard: {
+    gap: 10,
+  },
+  accountLabel: {
+    color: '#AFC3CE',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  accountValue: {
+    color: '#FFF8EE',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+  },
   fieldStack: {
     gap: 14,
   },
@@ -287,6 +391,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 12,
     paddingVertical: 12,
+  },
+  helperText: {
+    color: '#D6E5EE',
+    fontSize: 14,
+    lineHeight: 20,
   },
   actionStack: {
     gap: 10,
