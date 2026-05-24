@@ -10,6 +10,7 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT": "https://api.nivium.ca/format",
+        "EXPO_PUBLIC_NIVIUM_TRANSCRIBE_ENDPOINT": "https://api.nivium.ca/transcribe-format",
         "EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT": "https://render.nivium.ca/render",
         "EXPO_PUBLIC_NIVIUM_AUTH_ENDPOINT": "https://auth.nivium.ca"
       }
@@ -22,6 +23,7 @@
       },
       "env": {
         "EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT": "https://api.nivium.ca/format",
+        "EXPO_PUBLIC_NIVIUM_TRANSCRIBE_ENDPOINT": "https://api.nivium.ca/transcribe-format",
         "EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT": "https://render.nivium.ca/render",
         "EXPO_PUBLIC_NIVIUM_AUTH_ENDPOINT": "https://auth.nivium.ca"
       }
@@ -30,6 +32,7 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_NIVIUM_FORMATTER_ENDPOINT": "https://api.nivium.ca/format",
+        "EXPO_PUBLIC_NIVIUM_TRANSCRIBE_ENDPOINT": "https://api.nivium.ca/transcribe-format",
         "EXPO_PUBLIC_NIVIUM_RENDER_ENDPOINT": "https://render.nivium.ca/render",
         "EXPO_PUBLIC_NIVIUM_AUTH_ENDPOINT": "https://auth.nivium.ca"
       }

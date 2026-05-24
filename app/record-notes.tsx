@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -121,31 +121,44 @@ export default function RecordNotesScreen() {
   const { queueVoiceNoteRecording, finalizePendingVoiceNoteProcessing } = useSavedProfiles();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [isSavingFieldLocation, setIsSavingFieldLocation] = useState(false);
   const [fieldLocationStatus, setFieldLocationStatus] = useState<CurrentLocationStatus | null>(null);
+  const recordingSeedRef = useRef<Record<string, string> | null>(null);
+  const [recordingSeedValues, setRecordingSeedValues] = useState<Record<string, string> | null>(null);
   const compact = true;
-  const hasSavedFieldLocation = Boolean(session.reviewValues.lat_long?.trim() || session.reviewValues.elevation?.trim());
+  const hasActiveRecorder = isStartingRecording || Boolean(recording) || isProcessingAudio;
+  const protectedReviewValues = hasActiveRecorder ? recordingSeedValues ?? session.reviewValues : session.reviewValues;
+  const hasSavedFieldLocation = Boolean(protectedReviewValues.lat_long?.trim() || protectedReviewValues.elevation?.trim());
   const hasCapturedVoiceNotes = session.transcriptRaw.trim().length > 0;
   const voiceNotesPreview = session.engineTextCurrent.trim() || session.transcriptRaw.trim();
   const hasReviewReady = hasCapturedVoiceNotes || Boolean(session.profileId && session.engineTextCurrent.trim().length > 0);
   const canOpenReview = !recording && !isProcessingAudio && hasReviewReady;
 
   useEffect(() => {
-    if (!isPaid) {
+    if (!isPaid && !hasActiveRecorder) {
       router.replace({ pathname: '/upgrade', params: { feature: 'Voice Notes', returnTo: '/record-notes' } });
     }
-  }, [isPaid, router]);
+  }, [hasActiveRecorder, isPaid, router]);
 
-  if (!isPaid) {
+  if (!isPaid && !hasActiveRecorder) {
     return null;
   }
 
   const startRecording = async () => {
     try {
+      setIsStartingRecording(true);
+      const nextSeedValues = buildVoiceNoteSeedValues(session.reviewValues);
+      recordingSeedRef.current = nextSeedValues;
+      setRecordingSeedValues(nextSeedValues);
+
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
+        setIsStartingRecording(false);
+        recordingSeedRef.current = null;
+        setRecordingSeedValues(null);
         Alert.alert('Microphone Permission Needed', 'Allow microphone access to record voice notes.');
         return;
       }
@@ -165,7 +178,11 @@ export default function RecordNotesScreen() {
       setRecording(nextRecording);
       setIsRecording(true);
       setIsPaused(false);
+      setIsStartingRecording(false);
     } catch {
+      setIsStartingRecording(false);
+      recordingSeedRef.current = null;
+      setRecordingSeedValues(null);
       Alert.alert('Record Audio', 'Unable to start recording.');
     }
   };
@@ -203,7 +220,7 @@ export default function RecordNotesScreen() {
 
     let queuedProfileId: string | null = null;
     let queuedAudioUri: string | null = null;
-    const preservedSeedValues = buildVoiceNoteSeedValues(session.reviewValues);
+    const preservedSeedValues = recordingSeedRef.current ?? buildVoiceNoteSeedValues(session.reviewValues);
 
     try {
       setIsProcessingAudio(true);
@@ -217,7 +234,6 @@ export default function RecordNotesScreen() {
         throw new Error('No audio URI was generated.');
       }
 
-      await clearSession();
       const queuedProfile = await queueVoiceNoteRecording(audioUri, preservedSeedValues);
       if (!queuedProfile?.audioUri) {
         throw new Error('Voice notes could not be saved locally.');
@@ -246,6 +262,8 @@ export default function RecordNotesScreen() {
         warnings: response.warnings,
         formatterVersion: response.formatterVersion,
       });
+      recordingSeedRef.current = null;
+      setRecordingSeedValues(null);
       router.push('/voice-review');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Transcription failed.';
@@ -281,12 +299,18 @@ export default function RecordNotesScreen() {
       setIsSavingFieldLocation(true);
       try {
         const currentLocation = await resolveCurrentLocationValuesAsync();
-        const elevationUnit = normalizeElevationUnit(session.reviewValues.elevation_unit);
-        replaceReviewValues({
-          ...session.reviewValues,
+        const baseReviewValues = recordingSeedRef.current ?? session.reviewValues;
+        const elevationUnit = normalizeElevationUnit(baseReviewValues.elevation_unit);
+        const nextReviewValues = {
+          ...baseReviewValues,
           elevation: convertMetersToElevationUnit(currentLocation.elevationMeters, elevationUnit),
           lat_long: currentLocation.latLong,
-        });
+        };
+        if (hasActiveRecorder) {
+          recordingSeedRef.current = buildVoiceNoteSeedValues(nextReviewValues);
+          setRecordingSeedValues(recordingSeedRef.current);
+        }
+        replaceReviewValues(nextReviewValues);
         setFieldLocationStatus({
           tone: 'success',
           message: currentLocation.hasElevation
@@ -309,7 +333,7 @@ export default function RecordNotesScreen() {
       router.push('/voice-review');
       return;
     }
-    if (isProcessingAudio) {
+    if (isProcessingAudio || isStartingRecording) {
       return;
     }
     if (!recording) {
@@ -327,6 +351,8 @@ export default function RecordNotesScreen() {
 
   const recordButtonLabel = isProcessingAudio
     ? 'Processing recording...'
+    : isStartingRecording
+      ? 'Preparing recording...'
     : recording
       ? isRecording
         ? 'Pause Recording'
@@ -358,10 +384,20 @@ export default function RecordNotesScreen() {
               </View>
               <Pressable
                 onPress={() => {
+                  if (hasActiveRecorder) {
+                    return;
+                  }
                   setFieldLocationStatus(null);
+                  recordingSeedRef.current = null;
+                  setRecordingSeedValues(null);
                   void clearSession();
                 }}
-                style={({ pressed }) => [styles.clearButton, pressed ? styles.pressed : null]}>
+                disabled={hasActiveRecorder}
+                style={({ pressed }) => [
+                  styles.clearButton,
+                  hasActiveRecorder ? styles.disabled : null,
+                  pressed && !hasActiveRecorder ? styles.pressed : null,
+                ]}>
                 <Text style={styles.clearButtonText}>Clear Voice Notes</Text>
               </Pressable>
             </View>
@@ -380,12 +416,12 @@ export default function RecordNotesScreen() {
               {hasSavedFieldLocation ? (
                 <View style={styles.fieldLocationSavedCard}>
                   <Text style={styles.fieldLocationSavedLabel}>Saved for this voice note</Text>
-                  {session.reviewValues.lat_long?.trim() ? (
-                    <Text style={styles.fieldLocationSavedValue}>Lat / Long: {session.reviewValues.lat_long.trim()}</Text>
+                  {protectedReviewValues.lat_long?.trim() ? (
+                    <Text style={styles.fieldLocationSavedValue}>Lat / Long: {protectedReviewValues.lat_long.trim()}</Text>
                   ) : null}
-                  {session.reviewValues.elevation?.trim() ? (
+                  {protectedReviewValues.elevation?.trim() ? (
                     <Text style={styles.fieldLocationSavedValue}>
-                      Elevation: {formatElevationDisplay(session.reviewValues.elevation, session.reviewValues.elevation_unit)}
+                      Elevation: {formatElevationDisplay(protectedReviewValues.elevation, protectedReviewValues.elevation_unit)}
                     </Text>
                   ) : null}
                   {fieldLocationStatus ? (

@@ -1,7 +1,12 @@
+import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
+
 import { getFormatterEndpoint } from '@/utils/formatter-service';
 
 const CONFIGURED_TRANSCRIBE_ENDPOINT = process.env.EXPO_PUBLIC_NIVIUM_TRANSCRIBE_ENDPOINT?.trim() ?? '';
 const TRANSCRIBE_REQUEST_TIMEOUT_MS = 120000;
+const MIN_UPLOAD_FILE_BYTES = 1024;
 
 export type TranscribeResponse = {
   transcript: string;
@@ -30,6 +35,17 @@ export function isTranscribeServiceConfigured() {
   return Boolean(getTranscribeEndpoint());
 }
 
+async function getAudioUploadSizeAsync(uri: string) {
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists) {
+    throw new Error('Saved voice recording is unavailable for upload.');
+  }
+  if (typeof info.size === 'number' && info.size < MIN_UPLOAD_FILE_BYTES) {
+    throw new Error('Saved voice recording appears incomplete. Please retry the recording.');
+  }
+  return typeof info.size === 'number' ? info.size : null;
+}
+
 function formatTranscribeFailure(status: number, detail: string) {
   const cleanDetail = detail.trim();
   if (status === 502 || status === 503 || status === 504 || status >= 500) {
@@ -54,6 +70,7 @@ export async function transcribeAudioFromServiceAsync(args: {
     throw new Error('Transcription service is not configured.');
   }
 
+  const audioBytes = await getAudioUploadSizeAsync(args.audioUri);
   const form = new FormData();
   form.append('audio', {
     uri: args.audioUri,
@@ -62,6 +79,12 @@ export async function transcribeAudioFromServiceAsync(args: {
   } as never);
   form.append('source', args.source ?? 'raw-notes-audio');
   form.append('formatterVersion', args.formatterVersion ?? 'nivium-ai-v1');
+  if (typeof audioBytes === 'number') {
+    form.append('clientAudioBytes', String(audioBytes));
+  }
+  form.append('clientPlatform', Platform.OS);
+  form.append('clientAppVersion', Constants.expoConfig?.version ?? '');
+  form.append('clientNativeBuildVersion', String(Constants.nativeBuildVersion ?? ''));
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TRANSCRIBE_REQUEST_TIMEOUT_MS);
