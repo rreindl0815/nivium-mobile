@@ -30,6 +30,18 @@ export function isTranscribeServiceConfigured() {
   return Boolean(getTranscribeEndpoint());
 }
 
+function formatTranscribeFailure(status: number, detail: string) {
+  const cleanDetail = detail.trim();
+  if (status === 502 || status === 503 || status === 504 || status >= 500) {
+    const suffix = cleanDetail ? ` ${cleanDetail}` : '';
+    return `Nivium server is temporarily unavailable (${status}). Please retry in a few minutes.${suffix}`;
+  }
+  if (status === 429) {
+    return 'Nivium is temporarily rate limited. Please retry shortly.';
+  }
+  return `Transcription failed with status ${status}.${cleanDetail ? ` ${cleanDetail}` : ''}`;
+}
+
 export async function transcribeAudioFromServiceAsync(args: {
   audioUri: string;
   fileName?: string;
@@ -74,11 +86,11 @@ export async function transcribeAudioFromServiceAsync(args: {
     let errorDetail = '';
     try {
       const payload = (await response.json()) as { error?: string };
-      errorDetail = payload.error?.trim() ? ` ${payload.error.trim()}` : '';
+      errorDetail = payload.error?.trim() ?? '';
     } catch {
       // Ignore malformed error body.
     }
-    throw new Error(`Transcription failed with status ${response.status}.${errorDetail}`);
+    throw new Error(formatTranscribeFailure(response.status, errorDetail));
   }
 
   const payload = (await response.json()) as TranscribeResponse;

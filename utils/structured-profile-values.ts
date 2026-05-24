@@ -285,14 +285,8 @@ function parseLegacyLayerLine(line: string) {
     tokens.flatMap((token) => extractLegacyHardnessTokens(token))
   );
   const sizeTokens = tokens.flatMap((token) => extractSizeTokens(token));
-  const used = new Set([
-    ...tokens.filter((token) => token.toLowerCase() === 'crust'),
-  ]);
 
   const trailingCommentTokens = tokens.filter((token) => {
-    if (used.has(token)) {
-      return false;
-    }
     if (token.split('/').every((part) => Boolean(normalizeGrainToken(part)))) {
       return false;
     }

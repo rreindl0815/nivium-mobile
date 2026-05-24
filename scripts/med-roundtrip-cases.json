@@ -6,5 +6,9 @@
   {
     "name": "ect-compact-and-rb",
     "formattedText": "Date: 2026-05-01\nRun Name: Stability Mix\nObserver: Nivium QA\nTotal Hs: 96 cm\n\n0-35 RG P 1mm\n35-37 FC/SH F 6mm/14mm red\n37-67 FC/RG 1F-1F+ 4mm/1mm\n67-95 RG P-1F+\n95-96 IF K\n96-97 FC 4F 6mm red\n97-104 IF K | another crust\n104-156 RG P\n\nECTP24 at 155 cm\nRB3 at 96 cm\n\nNotes: compact test forms must survive MED roundtrip"
+  },
+  {
+    "name": "bare-crust-token-survives-roundtrip",
+    "formattedText": "Date: 2026-05-01\nRun Name: Schneider Check\nObserver: Nivium QA\nTotal Hs: 160 cm\n\n0-17 PP/DF F-4F\n17-30 FC 1F 6mm | facets are rounding\n34-36 IF K crust\n36-72 RG 1F 1mm\n\nPST 40/100 ARR at 120 cm"
   }
 ]

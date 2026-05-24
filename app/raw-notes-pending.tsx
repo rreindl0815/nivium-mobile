@@ -16,13 +16,15 @@ export default function RawNotesPendingScreen() {
   const notePreview =
     activeProfile?.transcriptRaw?.trim() ||
     activeProfile?.rawNotes?.trim() ||
-    (isPendingVoiceProcessing ? 'Audio recording saved locally. Retry processing when you have service again.' : 'No voice notes were saved on this profile.');
+    (isPendingVoiceProcessing
+      ? 'Audio recording saved locally. Retry processing when network or service is available again.'
+      : 'No voice notes were saved on this profile.');
   const sectionLabel = isPendingVoiceProcessing ? 'Waiting To Process Voice Notes' : isPendingRender ? 'Waiting To Render' : 'Waiting To Format';
   const statusCopy = isPendingVoiceProcessing
-    ? 'Your voice recording is saved in Archive on this device. Once the app has a working data or Wi-Fi connection again, retry processing to continue into Profile Review. If you leave the app now, reopen Nivium and go to Archive to find this saved recording.'
+    ? 'Your voice recording is saved in Archive on this device. Once the app has a working connection and backend service, retry processing to continue into Profile Review. If you leave the app now, reopen Nivium and go to Archive to find this saved recording.'
     : isPendingRender
-      ? 'Your structured profile data is already saved in Archive on this device. Once the app has a working data or Wi-Fi connection again, retry render to create the final plotted profile. If you leave the app now, reopen Nivium and go to Archive to find this saved profile.'
-      : 'Your voice notes are saved on the device. The final plotted profile can be formatted and rendered when the app has a working data or Wi-Fi connection again.';
+      ? 'Your structured profile data is already saved in Archive on this device. Once the app has a working connection and backend service, retry render to create the final plotted profile. If you leave the app now, reopen Nivium and go to Archive to find this saved profile.'
+      : 'Your voice notes are saved on the device. The final plotted profile can be formatted and rendered when the app has a working connection and backend service again.';
   const primaryActionLabel = isPendingVoiceProcessing ? 'Retry Processing' : isPendingRender ? 'Retry Render' : 'Try Again';
   const statusDetail = activeProfile?.pendingMessage?.trim() || activeProfile?.renderError?.trim() || '';
 
@@ -43,7 +45,7 @@ export default function RawNotesPendingScreen() {
 
           Alert.alert(
             'Still Waiting On Connection',
-            retryResult.error || 'Your recording is still saved locally and can be retried once service returns.'
+            retryResult.error || 'Your recording is still saved locally and can be retried once network and service are available again.'
           );
           return;
         }

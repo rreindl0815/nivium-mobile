@@ -128,6 +128,7 @@ export default function RecordNotesScreen() {
   const compact = true;
   const hasSavedFieldLocation = Boolean(session.reviewValues.lat_long?.trim() || session.reviewValues.elevation?.trim());
   const hasCapturedVoiceNotes = session.transcriptRaw.trim().length > 0;
+  const voiceNotesPreview = session.engineTextCurrent.trim() || session.transcriptRaw.trim();
   const hasReviewReady = hasCapturedVoiceNotes || Boolean(session.profileId && session.engineTextCurrent.trim().length > 0);
   const canOpenReview = !recording && !isProcessingAudio && hasReviewReady;
 
@@ -251,7 +252,7 @@ export default function RecordNotesScreen() {
       if (queuedProfileId && queuedAudioUri) {
         Alert.alert(
           'Voice Notes Saved',
-          `${message} Your recording was saved in Archive and can be retried once you have service again.`,
+          `${message} Your recording was saved in Archive and can be retried once network or service is available again.`,
           [
             {
               text: 'Open Saved Voice Notes',
@@ -373,11 +374,7 @@ export default function RecordNotesScreen() {
                 <Text style={styles.bulletGlyph}>•</Text>
                 <Text style={styles.instructionsLine}>Follow steps in the <Text style={styles.instructionsBold}>Fieldcard</Text>{'\n'}below</Text>
               </View>
-              {hasCapturedVoiceNotes && session.engineTextCurrent.trim() ? (
-                <Text style={styles.liveNotesText}>{session.engineTextCurrent}</Text>
-              ) : hasCapturedVoiceNotes ? (
-                <Text style={styles.liveNotesText}>{session.transcriptRaw}</Text>
-              ) : null}
+              {voiceNotesPreview ? <Text style={styles.liveNotesText}>{voiceNotesPreview}</Text> : null}
             </View>
             <View style={styles.fieldLocationShell}>
               {hasSavedFieldLocation ? (

@@ -187,7 +187,7 @@ export default function UpgradeScreen() {
               the finished plotted profile.
             </Text>
             <Text style={styles.modeCopy}>
-              Current access: {accessSource === 'subscription' ? 'Paid Subscription' : 'Free'}
+              Current access: {accessSource === 'developer' ? 'Developer Unlock' : accessSource === 'subscription' ? 'Paid Subscription' : 'Free'}
             </Text>
             <Text style={styles.modeCopy}>
               Account: {authConfigured ? (isAuthenticated ? user?.email ?? 'Signed in' : 'Create your Nivium account before purchase') : 'Unavailable in this build'}

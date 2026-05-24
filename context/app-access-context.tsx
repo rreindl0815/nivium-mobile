@@ -8,7 +8,7 @@ import { Platform } from 'react-native';
 import { useAuth } from '@/context/auth-context';
 
 type AppTier = 'free' | 'paid';
-type AccessSource = 'free' | 'subscription';
+type AccessSource = 'free' | 'subscription' | 'developer';
 
 type AppAccessContextValue = {
   tier: AppTier;
@@ -23,6 +23,7 @@ type AppAccessContextValue = {
 
 const STORAGE_KEY = 'nivium-app-tier-v2';
 const TESTER_UNLOCK_ENABLED = process.env.EXPO_PUBLIC_NIVIUM_TESTER_UNLOCK === '1';
+const DEV_ACCESS_UNLOCK_ENABLED = __DEV__;
 const DEFAULT_TIER: AppTier = TESTER_UNLOCK_ENABLED ? 'paid' : 'free';
 const EXPO_GO_NATIVE_PURCHASES_UNAVAILABLE =
   Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
@@ -62,7 +63,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) {
           return;
         }
-        if (TESTER_UNLOCK_ENABLED) {
+        if (TESTER_UNLOCK_ENABLED || DEV_ACCESS_UNLOCK_ENABLED) {
           setTierState('paid');
           await AsyncStorage.setItem(STORAGE_KEY, 'paid');
           return;
@@ -218,10 +219,12 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
     () => {
       const subscriptionActive = hasPaidEntitlement(customerInfo);
       const testerUnlockActive = TESTER_UNLOCK_ENABLED && tier === 'paid';
+      const developerUnlockActive = DEV_ACCESS_UNLOCK_ENABLED;
+      const isPaid = developerUnlockActive || testerUnlockActive || subscriptionActive;
       return {
         tier,
-        isPaid: testerUnlockActive || subscriptionActive,
-        accessSource: subscriptionActive ? 'subscription' : 'free',
+        isPaid,
+        accessSource: developerUnlockActive ? 'developer' : subscriptionActive ? 'subscription' : 'free',
         purchasesConfigured,
         revenueCatIdentityReady,
         setTier: async (nextTier) => {

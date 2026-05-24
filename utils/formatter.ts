@@ -192,11 +192,22 @@ function buildStructuredLayerLines(values: ProfileDraft['values']) {
     const size = [size1, size2].filter(Boolean).join('/');
 
     const mainParts = [`${top}-${bottomField}`, grain, hardness, size, isConcern ? 'red' : ''].filter(Boolean);
-    const commentPart = comment ? `| ${comment}` : '';
+    const commentPart = formatStructuredLayerComment(comment);
     results.push([mainParts.join(' '), commentPart].filter(Boolean).join(' ').trim());
   }
 
   return results;
+}
+
+function formatStructuredLayerComment(comment: string) {
+  const clean = normalizeSpacing(comment);
+  if (!clean) {
+    return '';
+  }
+  if (/^crust(?:\s*\|.*)?$/i.test(clean)) {
+    return clean;
+  }
+  return `| ${clean}`;
 }
 
 function normalizeStructuredSize(value: string) {

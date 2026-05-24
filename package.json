@@ -16,6 +16,7 @@
     "check:audio:api": "python3 ./scripts/check-transcribe-audio.py --audio \"/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/nivium-test.m4a\" --endpoint https://api.nivium.ca/transcribe-format --runs 5 --strict-identical",
     "check:audio:sun-oka:local": "python3 ./scripts/check-transcribe-audio.py --audio \"/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/Sun-Oka Beach Park.m4a\" --cases ./scripts/transcribe-audio-sun-oka-regression-cases.json --endpoint http://127.0.0.1:8791/transcribe-format --runs 3 --strict-identical",
     "check:audio:sun-oka:api": "python3 ./scripts/check-transcribe-audio.py --audio \"/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/Sun-Oka Beach Park.m4a\" --cases ./scripts/transcribe-audio-sun-oka-regression-cases.json --endpoint https://api.nivium.ca/transcribe-format --runs 3 --strict-identical",
+    "check:audio:oakspring:api": "python3 ./scripts/check-transcribe-audio.py --audio \"/Users/robertreindl/Desktop/Nivium Workspace/03 Audio Regression Files/111 Oakspring Rd.m4a\" --cases ./scripts/transcribe-audio-oakspring-regression-cases.json --endpoint https://api.nivium.ca/transcribe-format --runs 3 --strict-identical",
     "check:guardrails:local": "npm run check:backend:guardrails && npm run check:audio:sun-oka:local",
     "check:med": "node ./scripts/check-med-roundtrip.js"
   },

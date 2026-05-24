@@ -1,0 +1,21 @@
+[
+  {
+    "name": "oakspring-core-integrity",
+    "expectedStatus": 200,
+    "mustContain": [
+      "Run Name: Salt Spring",
+      "49-53 SH/FC",
+      "13mm/5mm",
+      "230-240 DH 4F 6mm red",
+      "CTE7 RP at 6 cm",
+      "ECTP11 at 50 cm"
+    ],
+    "mustNotContain": [
+      "49-53 FC/SH",
+      "49-53 FC/SH F+ 3mm/5mm",
+      "230-240 DH 4F red",
+      "Notes: Stability test easy correction applied.",
+      "Stability test easy corrected to compression test easy at 7 taps"
+    ]
+  }
+]

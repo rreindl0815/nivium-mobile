@@ -72,7 +72,23 @@ function parseLegacyLayerLine(line) {
   const grain = tokens.find((t) => /^(PP|DF|RG|FC|FCxr|SH|DH|MF|IF|IFrc|MFcr)(\/(PP|DF|RG|FC|FCxr|SH|DH|MF|IF|IFrc|MFcr))?$/i.test(t)) || '';
   const hardness = tokens.find((t) => /^(F|F\+|4F|4F\+|1F|1F\+|P|P\+|K|K\+|I)(-(F|F\+|4F|4F\+|1F|1F\+|P|P\+|K|K\+|I))?$/i.test(t)) || '';
   const size = tokens.find((t) => /^\d+(?:\.\d+)?(mm|cm)(\/\d+(?:\.\d+)?(mm|cm))?$/i.test(t)) || '';
-  return { top, bottom, grain, hardness, size, comment: comment || '', concern: isRed ? 'yes' : 'no' };
+  const trailingCommentTokens = tokens.filter((token) => {
+    if (/^(PP|DF|RG|FC|FCxr|SH|DH|MF|IF|IFrc|MFcr)(\/(PP|DF|RG|FC|FCxr|SH|DH|MF|IF|IFrc|MFcr))?$/i.test(token)) {
+      return false;
+    }
+    if (/^(F|F\+|4F|4F\+|1F|1F\+|P|P\+|K|K\+|I)(-(F|F\+|4F|4F\+|1F|1F\+|P|P\+|K|K\+|I))?$/i.test(token)) {
+      return false;
+    }
+    if (/^\d+(?:\.\d+)?(mm|cm)(\/\d+(?:\.\d+)?(mm|cm))?$/i.test(token)) {
+      return false;
+    }
+    if (/^red$/i.test(token)) {
+      return false;
+    }
+    return true;
+  });
+  const mergedComment = [trailingCommentTokens.join(' ').trim(), comment || ''].filter(Boolean).join(' | ').trim();
+  return { top, bottom, grain, hardness, size, comment: mergedComment, concern: isRed ? 'yes' : 'no' };
 }
 
 function parseStabilityLine(line) {
@@ -140,7 +156,11 @@ function serializeLayer(layer) {
     .filter(Boolean)
     .join(' ')
     .trim();
-  return layer.comment ? `${main} | ${layer.comment}` : main;
+  if (!layer.comment) return main;
+  if (/^crust(?:\s*\|.*)?$/i.test(layer.comment)) {
+    return `${main} ${layer.comment}`.trim();
+  }
+  return `${main} | ${layer.comment}`;
 }
 
 function serializeStability(test) {

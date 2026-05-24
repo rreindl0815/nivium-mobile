@@ -290,14 +290,8 @@ function parseLegacyLayerLine(line: string) {
     tokens.flatMap((token) => extractLegacyHardnessTokens(token))
   );
   const sizeTokens = tokens.flatMap((token) => extractSizeTokens(token));
-  const used = new Set([
-    ...tokens.filter((token) => token.toLowerCase() === 'crust'),
-  ]);
 
   const trailingCommentTokens = tokens.filter((token) => {
-    if (used.has(token)) {
-      return false;
-    }
     if (token.split('/').every((part) => Boolean(normalizeGrainToken(part)))) {
       return false;
     }
@@ -600,6 +594,29 @@ function buildProfileDisplayFromFormattedText(formattedText: string) {
     title: runName || 'Untitled Run',
     subtitle: `${date || 'Date missing'} · ${observer || 'Observer missing'}`,
   };
+}
+
+function countParsedCoreSections(formattedText: string) {
+  const parsed = formattedText.trim() ? parseFormattedProfile(formattedText) : null;
+  if (!parsed) {
+    return 0;
+  }
+
+  return parsed.layers.length + parsed.temperatures.length + parsed.stabilityTests.length;
+}
+
+function choosePreferredVoiceSessionFormattedText(currentText: string, originalText: string) {
+  const current = currentText.trim();
+  const original = originalText.trim();
+
+  if (!current) {
+    return original;
+  }
+  if (!original) {
+    return current;
+  }
+
+  return countParsedCoreSections(original) > countParsedCoreSections(current) ? original : current;
 }
 
 function buildProfileDisplayMetadata(profile: SavedProfile) {
@@ -1123,7 +1140,11 @@ export function SavedProfilesProvider({ children }: { children: React.ReactNode 
       values: reviewValues,
       updatedAt: new Date().toISOString(),
     });
-    const formattedText = rebuilt.formattedText.trim();
+    const preferredSourceText = choosePreferredVoiceSessionFormattedText(
+      rebuilt.formattedText,
+      session.engineTextCurrent || session.engineTextOriginal
+    );
+    const formattedText = preferredSourceText.trim();
     const display = buildProfileDisplayFromFormattedText(formattedText);
     const createdAt = new Date().toISOString();
     const formatterWarnings = Array.from(new Set([...(session.serviceWarnings ?? []), ...(rebuilt.warnings ?? [])]));

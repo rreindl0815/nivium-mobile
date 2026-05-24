@@ -59,7 +59,15 @@ export default function AccountScreen() {
                   </View>
                   <View style={styles.detailGroup}>
                     <Text style={styles.label}>Paid Access</Text>
-                    <Text style={styles.value}>{isPaid ? 'Paid Subscription' : accessSource === 'subscription' ? 'Subscription Syncing' : 'Free'}</Text>
+                    <Text style={styles.value}>
+                      {accessSource === 'developer'
+                        ? 'Developer Unlock'
+                        : isPaid
+                          ? 'Paid Subscription'
+                          : accessSource === 'subscription'
+                            ? 'Subscription Syncing'
+                            : 'Free'}
+                    </Text>
                   </View>
                   <View style={styles.detailGroup}>
                     <Text style={styles.label}>Optional Updates</Text>

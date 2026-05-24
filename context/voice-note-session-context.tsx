@@ -5,6 +5,7 @@ import { useProfileDefaults } from '@/context/profile-defaults-context';
 import type { SavedProfile, VoiceNoteSession } from '@/types/profile';
 import { buildDefaultProfileValues, type ProfileDefaults } from '@/utils/profile-defaults';
 import { formatDraftToEngineText } from '@/utils/formatter';
+import { parseFormattedProfile } from '@/utils/profile-document';
 import { hydrateStructuredValuesFromFormattedText } from '@/utils/structured-profile-values';
 
 const STORAGE_KEY = 'nivium-voice-note-session-v1';
@@ -101,22 +102,24 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
             warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
             updatedAt: parsed.updatedAt ?? new Date().toISOString(),
           };
+          const trustedEngineText = resolvePreferredVoiceNoteEngineText(
+            loadedSession.engineTextCurrent?.trim() ?? '',
+            loadedSession.engineTextOriginal?.trim() ?? ''
+          );
           const seededReviewValues = hydrateStructuredValuesFromFormattedText(
-            loadedSession.engineTextCurrent?.trim() || loadedSession.engineTextOriginal?.trim() || '',
+            trustedEngineText,
             loadedSession.reviewValues ?? {}
           );
-          const nextSession =
-            (loadedSession.engineTextCurrent?.trim() || loadedSession.engineTextOriginal?.trim())
-              ? buildSessionFromReviewValues(
-                  {
-                    ...loadedSession,
-                    reviewValues: seededReviewValues,
-                  },
-                  seededReviewValues
-                )
-              : Object.keys(loadedSession.reviewValues).length > 0
-                ? buildSessionFromReviewValues(loadedSession, loadedSession.reviewValues)
-                : loadedSession;
+          const nextSession = trustedEngineText
+            ? {
+                ...loadedSession,
+                engineTextCurrent: trustedEngineText,
+                engineTextOriginal: loadedSession.engineTextOriginal?.trim() || trustedEngineText,
+                reviewValues: seededReviewValues,
+              }
+            : Object.keys(loadedSession.reviewValues).length > 0
+              ? buildSessionFromReviewValues(loadedSession, loadedSession.reviewValues)
+              : loadedSession;
           setSession(nextSession);
         }
       } catch {
@@ -202,22 +205,20 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
       serviceWarnings.push('Formatter returned transcript text only. Review carefully before render.');
     }
 
-    const reviewValues = hydrateStructuredValuesFromFormattedText(engineText || transcriptRaw, input.resolvedValues ?? {});
-    const seededSession = buildSessionFromReviewValues(
-      {
-        profileId: input.profileId,
-        transcriptRaw,
-        engineTextOriginal: engineText || transcriptRaw,
-        engineTextCurrent: engineText || transcriptRaw,
-        reviewValues,
-        serviceWarnings,
-        warnings: serviceWarnings,
-        formatterVersion: input.formatterVersion,
-        audioUri: input.audioUri,
-        updatedAt: new Date().toISOString(),
-      },
-      reviewValues
-    );
+    const trustedEngineText = engineText || transcriptRaw;
+    const reviewValues = hydrateStructuredValuesFromFormattedText(trustedEngineText, input.resolvedValues ?? {});
+    const seededSession: VoiceNoteSession = {
+      profileId: input.profileId,
+      transcriptRaw,
+      engineTextOriginal: trustedEngineText,
+      engineTextCurrent: trustedEngineText,
+      reviewValues,
+      serviceWarnings,
+      warnings: serviceWarnings,
+      formatterVersion: input.formatterVersion,
+      audioUri: input.audioUri,
+      updatedAt: new Date().toISOString(),
+    };
 
     void persistSession(seededSession);
   };
@@ -237,21 +238,22 @@ export function VoiceNoteSessionProvider({ children }: { children: React.ReactNo
   };
 
   const loadFromSavedProfile = (profile: SavedProfile) => {
-    const reviewValues = hydrateStructuredValuesFromFormattedText(profile.formattedText ?? '', profile.sourceValues ?? {});
-    const nextSession = buildSessionFromReviewValues(
-      {
-        profileId: profile.id,
-        transcriptRaw: profile.transcriptRaw ?? profile.rawNotes ?? '',
-        engineTextOriginal: profile.engineTextOriginal ?? profile.formattedText ?? '',
-        engineTextCurrent: profile.formattedText ?? '',
-        reviewValues,
-        serviceWarnings: profile.formatterWarnings ?? [],
-        warnings: profile.formatterWarnings ?? [],
-        audioUri: profile.audioUri,
-        updatedAt: new Date().toISOString(),
-      },
-      reviewValues
+    const trustedEngineText = resolvePreferredVoiceNoteEngineText(
+      profile.formattedText ?? '',
+      profile.engineTextOriginal ?? profile.formattedText ?? ''
     );
+    const reviewValues = hydrateStructuredValuesFromFormattedText(trustedEngineText, profile.sourceValues ?? {});
+    const nextSession: VoiceNoteSession = {
+      profileId: profile.id,
+      transcriptRaw: profile.transcriptRaw ?? profile.rawNotes ?? '',
+      engineTextOriginal: profile.engineTextOriginal ?? trustedEngineText,
+      engineTextCurrent: trustedEngineText,
+      reviewValues,
+      serviceWarnings: profile.formatterWarnings ?? [],
+      warnings: profile.formatterWarnings ?? [],
+      audioUri: profile.audioUri,
+      updatedAt: new Date().toISOString(),
+    };
     void persistSession(nextSession);
   };
 
@@ -327,4 +329,30 @@ function formatVoiceNoteTime(date: Date) {
 function haveSameReviewValues(left: Record<string, string>, right: Record<string, string>) {
   const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
   return [...keys].every((key) => (left[key] ?? '') === (right[key] ?? ''));
+}
+
+function resolvePreferredVoiceNoteEngineText(currentText: string, originalText: string) {
+  const current = currentText.trim();
+  const original = originalText.trim();
+
+  if (!current) {
+    return original;
+  }
+  if (!original) {
+    return current;
+  }
+  if (!shouldPromoteOriginalVoiceNoteText(current, original)) {
+    return current;
+  }
+  return original;
+}
+
+function shouldPromoteOriginalVoiceNoteText(currentText: string, originalText: string) {
+  const currentParsed = parseFormattedProfile(currentText);
+  const originalParsed = parseFormattedProfile(originalText);
+  const currentCoreCount = currentParsed.layers.length + currentParsed.temperatures.length + currentParsed.stabilityTests.length;
+  const originalCoreCount = originalParsed.layers.length + originalParsed.temperatures.length + originalParsed.stabilityTests.length;
+  const currentLooksMetadataOnly = currentParsed.metadata.length > 0 && currentCoreCount === 0;
+
+  return originalCoreCount > currentCoreCount && currentLooksMetadataOnly;
 }
