@@ -64,6 +64,8 @@ export async function transcribeAudioFromServiceAsync(args: {
   mimeType?: string;
   source?: string;
   formatterVersion?: string;
+  recordingDurationMillis?: number;
+  recordingWasInterrupted?: boolean;
 }): Promise<TranscribeResponse> {
   const endpoint = getTranscribeEndpoint();
   if (!endpoint) {
@@ -82,6 +84,10 @@ export async function transcribeAudioFromServiceAsync(args: {
   if (typeof audioBytes === 'number') {
     form.append('clientAudioBytes', String(audioBytes));
   }
+  if (typeof args.recordingDurationMillis === 'number' && Number.isFinite(args.recordingDurationMillis)) {
+    form.append('clientRecordingDurationMs', String(Math.max(0, Math.round(args.recordingDurationMillis))));
+  }
+  form.append('clientRecordingInterrupted', args.recordingWasInterrupted ? '1' : '0');
   form.append('clientPlatform', Platform.OS);
   form.append('clientAppVersion', Constants.expoConfig?.version ?? '');
   form.append('clientNativeBuildVersion', String(Constants.nativeBuildVersion ?? ''));

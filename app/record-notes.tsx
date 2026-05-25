@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
-import { ActivityIndicator, Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { ActivityIndicator, Alert, Image, ImageBackground, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { CurrentLocationStatus } from '@/components/profile-editor/editor-types';
 import { useAppAccess } from '@/context/app-access-context';
@@ -71,6 +72,10 @@ const stabilityBlocks = [
 ];
 
 const extraNotesLines = ['____________________'];
+const RECORDING_KEEP_AWAKE_TAG = 'nivium-voice-note-recording';
+const RECORDING_STATUS_UPDATE_INTERVAL_MS = 1000;
+
+type RecordingStatus = Awaited<ReturnType<Audio.Recording['getStatusAsync']>>;
 
 function getFieldcardSectionTitle(sectionId: 'metadata' | 'layers' | 'temperature' | 'stability' | 'notes') {
   switch (sectionId) {
@@ -124,9 +129,12 @@ export default function RecordNotesScreen() {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [recordingDurationMillis, setRecordingDurationMillis] = useState(0);
   const [isSavingFieldLocation, setIsSavingFieldLocation] = useState(false);
   const [fieldLocationStatus, setFieldLocationStatus] = useState<CurrentLocationStatus | null>(null);
   const recordingSeedRef = useRef<Record<string, string> | null>(null);
+  const recordingDurationRef = useRef(0);
+  const recordingInterruptedRef = useRef(false);
   const [recordingSeedValues, setRecordingSeedValues] = useState<Record<string, string> | null>(null);
   const compact = true;
   const hasActiveRecorder = isStartingRecording || Boolean(recording) || isProcessingAudio;
@@ -147,9 +155,34 @@ export default function RecordNotesScreen() {
     return null;
   }
 
+  const releaseRecordingGuardsAsync = async () => {
+    await deactivateKeepAwake(RECORDING_KEEP_AWAKE_TAG).catch(() => undefined);
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    }).catch(() => undefined);
+  };
+
+  const handleRecordingStatusUpdate = (status: RecordingStatus) => {
+    const durationMillis = Math.max(recordingDurationRef.current, status.durationMillis ?? 0);
+    recordingDurationRef.current = durationMillis;
+    setRecordingDurationMillis(durationMillis);
+    if (!status.canRecord && !status.isDoneRecording) {
+      recordingInterruptedRef.current = true;
+    }
+  };
+
   const startRecording = async () => {
     try {
       setIsStartingRecording(true);
+      setRecordingDurationMillis(0);
+      recordingDurationRef.current = 0;
+      recordingInterruptedRef.current = false;
       const nextSeedValues = buildVoiceNoteSeedValues(session.reviewValues);
       recordingSeedRef.current = nextSeedValues;
       setRecordingSeedValues(nextSeedValues);
@@ -163,9 +196,11 @@ export default function RecordNotesScreen() {
         return;
       }
 
+      await activateKeepAwakeAsync(RECORDING_KEEP_AWAKE_TAG).catch(() => undefined);
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: Platform.OS === 'android',
         interruptionModeIOS: InterruptionModeIOS.DoNotMix,
         interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
         shouldDuckAndroid: true,
@@ -173,7 +208,22 @@ export default function RecordNotesScreen() {
       });
 
       const nextRecording = new Audio.Recording();
-      await nextRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      nextRecording.setProgressUpdateInterval(RECORDING_STATUS_UPDATE_INTERVAL_MS);
+      nextRecording.setOnRecordingStatusUpdate(handleRecordingStatusUpdate);
+      await nextRecording.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        keepAudioActiveHint: true,
+        android: {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+          numberOfChannels: 1,
+          bitRate: 96000,
+        },
+        ios: {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+          numberOfChannels: 1,
+          bitRate: 96000,
+        },
+      });
       await nextRecording.startAsync();
       setRecording(nextRecording);
       setIsRecording(true);
@@ -183,6 +233,10 @@ export default function RecordNotesScreen() {
       setIsStartingRecording(false);
       recordingSeedRef.current = null;
       setRecordingSeedValues(null);
+      setRecordingDurationMillis(0);
+      recordingDurationRef.current = 0;
+      recordingInterruptedRef.current = false;
+      await releaseRecordingGuardsAsync();
       Alert.alert('Record Audio', 'Unable to start recording.');
     }
   };
@@ -226,6 +280,8 @@ export default function RecordNotesScreen() {
       setIsProcessingAudio(true);
       await recording.stopAndUnloadAsync();
       const audioUri = recording.getURI();
+      const finalRecordingDurationMillis = recordingDurationRef.current;
+      const recordingWasInterrupted = recordingInterruptedRef.current;
       setRecording(null);
       setIsRecording(false);
       setIsPaused(false);
@@ -245,6 +301,8 @@ export default function RecordNotesScreen() {
         audioUri: queuedProfile.audioUri,
         source: 'raw-notes-audio',
         formatterVersion: 'nivium-ai-v1',
+        recordingDurationMillis: finalRecordingDurationMillis,
+        recordingWasInterrupted,
       });
       const finalizedProfile = await finalizePendingVoiceNoteProcessing(queuedProfile.id, {
         transcriptRaw: response.transcript,
@@ -264,6 +322,9 @@ export default function RecordNotesScreen() {
       });
       recordingSeedRef.current = null;
       setRecordingSeedValues(null);
+      setRecordingDurationMillis(0);
+      recordingDurationRef.current = 0;
+      recordingInterruptedRef.current = false;
       router.push('/voice-review');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Transcription failed.';
@@ -287,6 +348,7 @@ export default function RecordNotesScreen() {
       }
     } finally {
       setIsProcessingAudio(false);
+      await releaseRecordingGuardsAsync();
     }
   };
 
@@ -476,6 +538,11 @@ export default function RecordNotesScreen() {
               </View>
             </Pressable>
             {recording ? (
+              <Text style={styles.recordingTimerText}>
+                {isPaused ? 'Paused' : 'Recording'} {formatRecordingDuration(recordingDurationMillis)}
+              </Text>
+            ) : null}
+            {recording ? (
               <Pressable
                 onPress={() => {
                   void stopRecording();
@@ -518,6 +585,13 @@ export default function RecordNotesScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function formatRecordingDuration(durationMillis: number) {
+  const totalSeconds = Math.max(0, Math.floor(durationMillis / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 const FieldcardGuidePanel = memo(function FieldcardGuidePanel({ compact }: { compact: boolean }) {
@@ -877,6 +951,13 @@ const styles = StyleSheet.create({
   stopButtonText: {
     color: '#FFF8EE',
     fontSize: 18,
+    fontWeight: '800',
+  },
+  recordingTimerText: {
+    alignSelf: 'center',
+    marginTop: 10,
+    color: '#173248',
+    fontSize: 15,
     fontWeight: '800',
   },
   input: {
