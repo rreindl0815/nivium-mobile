@@ -26,11 +26,11 @@ export default function RootLayout() {
             <ProfileDraftProvider>
               <VoiceNoteSessionProvider>
                 <SavedProfilesProvider>
-                  <Stack>
+                  <Stack screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                     <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
                   </Stack>
-                  <StatusBar style="auto" />
+                  <StatusBar style="light" backgroundColor="#20384D" />
                 </SavedProfilesProvider>
               </VoiceNoteSessionProvider>
             </ProfileDraftProvider>
