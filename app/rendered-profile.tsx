@@ -9,7 +9,7 @@ import { useSavedProfiles } from '@/context/saved-profiles-context';
 
 export default function RenderedProfileScreen() {
   const router = useRouter();
-  const { isPaid, setTier } = useAppAccess();
+  const { isAccessLoading, isPaid, setTier } = useAppAccess();
   const params = useLocalSearchParams<{ profileId?: string; viewer?: string }>();
   const { profiles, selectedProfile } = useSavedProfiles();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -28,6 +28,10 @@ export default function RenderedProfileScreen() {
   const modalPreviewHeight = modalPreviewWidth * 1.4286;
 
   const handlePaidAction = (label: string, route: '/archive' | '/print' | '/share') => {
+    if (isAccessLoading) {
+      Alert.alert('Checking Access', 'Nivium is reconnecting your account and subscription. Please try again in a moment.');
+      return;
+    }
     if (isPaid) {
       router.push(route);
       return;

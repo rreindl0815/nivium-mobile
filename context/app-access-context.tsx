@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import Purchases, { CustomerInfo, LOG_LEVEL } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { useAuth } from '@/context/auth-context';
 
@@ -14,6 +14,7 @@ type AppAccessContextValue = {
   tier: AppTier;
   isPaid: boolean;
   accessSource: AccessSource;
+  isAccessLoading: boolean;
   purchasesConfigured: boolean;
   revenueCatIdentityReady: boolean;
   setTier: (tier: AppTier) => Promise<void>;
@@ -51,6 +52,8 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded: authLoaded, user } = useAuth();
   const [tier, setTierState] = useState<AppTier>(DEFAULT_TIER);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
+  const [customerInfoCheckComplete, setCustomerInfoCheckComplete] = useState(false);
+  const [purchasesInitializationComplete, setPurchasesInitializationComplete] = useState(false);
   const [purchasesConfigured, setPurchasesConfigured] = useState(false);
   const [revenueCatIdentityReady, setRevenueCatIdentityReady] = useState(false);
 
@@ -94,6 +97,8 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
     if (!apiKey || Platform.OS === 'web' || EXPO_GO_NATIVE_PURCHASES_UNAVAILABLE) {
       setPurchasesConfigured(false);
       setRevenueCatIdentityReady(false);
+      setCustomerInfoCheckComplete(true);
+      setPurchasesInitializationComplete(true);
       return;
     }
 
@@ -107,7 +112,9 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
       }
       Purchases.configure({ apiKey });
       setPurchasesConfigured(true);
+      setPurchasesInitializationComplete(true);
       setRevenueCatIdentityReady(false);
+      setCustomerInfoCheckComplete(false);
       Purchases.addCustomerInfoUpdateListener(listener);
       void Purchases.getCustomerInfo()
         .then((info) => {
@@ -115,10 +122,15 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {
           setCustomerInfo(null);
+        })
+        .finally(() => {
+          setCustomerInfoCheckComplete(true);
         });
     } catch {
       setPurchasesConfigured(false);
       setRevenueCatIdentityReady(false);
+      setCustomerInfoCheckComplete(true);
+      setPurchasesInitializationComplete(true);
     }
 
     return () => {
@@ -129,7 +141,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    if (!authLoaded || Platform.OS === 'web') {
+    if (!authLoaded || !purchasesInitializationComplete || Platform.OS === 'web') {
       return () => {
         isMounted = false;
       };
@@ -146,6 +158,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
 
     void (async () => {
       setRevenueCatIdentityReady(false);
+      setCustomerInfoCheckComplete(false);
       try {
         const currentAppUserId = await Purchases.getAppUserID().catch(() => '');
         let identityReady = currentAppUserId === user?.id;
@@ -187,6 +200,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
           if (latestCustomerInfo) {
             setCustomerInfo(latestCustomerInfo);
           }
+          setCustomerInfoCheckComplete(true);
           setRevenueCatIdentityReady(identityReady);
           return;
         }
@@ -201,10 +215,12 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (isMounted) {
+          setCustomerInfoCheckComplete(true);
           setRevenueCatIdentityReady(true);
         }
       } catch {
         if (isMounted) {
+          setCustomerInfoCheckComplete(true);
           setRevenueCatIdentityReady(false);
         }
       }
@@ -213,7 +229,36 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, [authLoaded, purchasesConfigured, user]);
+  }, [authLoaded, purchasesConfigured, purchasesInitializationComplete, user]);
+
+  useEffect(() => {
+    if (!purchasesConfigured) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        return;
+      }
+
+      setCustomerInfoCheckComplete(false);
+      void (async () => {
+        try {
+          await Purchases.invalidateCustomerInfoCache();
+          const info = await Purchases.getCustomerInfo();
+          setCustomerInfo(info);
+        } catch {
+          // Keep the last known CustomerInfo when a foreground refresh is temporarily unavailable.
+        } finally {
+          setCustomerInfoCheckComplete(true);
+        }
+      })();
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [purchasesConfigured]);
 
   const value = useMemo<AppAccessContextValue>(
     () => {
@@ -221,9 +266,15 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
       const testerUnlockActive = TESTER_UNLOCK_ENABLED && tier === 'paid';
       const developerUnlockActive = DEV_ACCESS_UNLOCK_ENABLED;
       const isPaid = developerUnlockActive || testerUnlockActive || subscriptionActive;
+      const isAccessLoading =
+        !isPaid &&
+        (!authLoaded ||
+          !purchasesInitializationComplete ||
+          (purchasesConfigured && (!revenueCatIdentityReady || !customerInfoCheckComplete)));
       return {
         tier,
         isPaid,
+        isAccessLoading,
         accessSource: developerUnlockActive ? 'developer' : subscriptionActive ? 'subscription' : 'free',
         purchasesConfigured,
         revenueCatIdentityReady,
@@ -258,6 +309,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
 
             const refreshedCustomerInfo = await Purchases.getCustomerInfo();
             setCustomerInfo(refreshedCustomerInfo);
+            setCustomerInfoCheckComplete(true);
             return hasPaidEntitlement(refreshedCustomerInfo);
           } catch {
             return false;
@@ -270,11 +322,20 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
 
           const restoredCustomerInfo = await Purchases.restorePurchases();
           setCustomerInfo(restoredCustomerInfo);
+          setCustomerInfoCheckComplete(true);
           return hasPaidEntitlement(restoredCustomerInfo);
         },
       };
     },
-    [customerInfo, purchasesConfigured, revenueCatIdentityReady, tier]
+    [
+      authLoaded,
+      customerInfo,
+      customerInfoCheckComplete,
+      purchasesConfigured,
+      purchasesInitializationComplete,
+      revenueCatIdentityReady,
+      tier,
+    ]
   );
 
   return <AppAccessContext.Provider value={value}>{children}</AppAccessContext.Provider>;

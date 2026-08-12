@@ -7,9 +7,14 @@ import { useAuth } from '@/context/auth-context';
 export default function AccountScreen() {
   const router = useRouter();
   const { authConfigured, isAuthenticated, signOut, user } = useAuth();
-  const { accessSource, isPaid, purchasesConfigured, restorePurchases } = useAppAccess();
+  const { accessSource, isAccessLoading, isPaid, purchasesConfigured, restorePurchases, revenueCatIdentityReady } = useAppAccess();
 
   const handleRestore = () => {
+    if (isAccessLoading || !revenueCatIdentityReady) {
+      Alert.alert('Account Syncing', 'Please wait a moment while Nivium reconnects your account before restoring purchases.');
+      return;
+    }
+
     if (!purchasesConfigured) {
       Alert.alert('Restore Unavailable', 'We cannot restore purchases right now. Please try again shortly.');
       return;
@@ -60,7 +65,9 @@ export default function AccountScreen() {
                   <View style={styles.detailGroup}>
                     <Text style={styles.label}>Paid Access</Text>
                     <Text style={styles.value}>
-                      {accessSource === 'developer'
+                      {isAccessLoading
+                        ? 'Checking Subscription'
+                        : accessSource === 'developer'
                         ? 'Developer Unlock'
                         : isPaid
                           ? 'Paid Subscription'

@@ -4,20 +4,25 @@ import { useEffect } from 'react';
 import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
+import { AccessLoadingScreen } from '@/components/access-loading-screen';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { getProfileHighlights, parseFormattedProfile } from '@/utils/profile-document';
 
 export default function ShareScreen() {
   const router = useRouter();
-  const { isPaid } = useAppAccess();
+  const { isAccessLoading, isPaid } = useAppAccess();
   const { selectedProfile, ensureProfilePdf } = useSavedProfiles();
   const highlights = selectedProfile ? getProfileHighlights(parseFormattedProfile(selectedProfile.formattedText)) : null;
 
   useEffect(() => {
-    if (!isPaid) {
+    if (!isAccessLoading && !isPaid) {
       router.replace({ pathname: '/upgrade', params: { feature: 'Share', returnTo: '/share' } });
     }
-  }, [isPaid, router]);
+  }, [isAccessLoading, isPaid, router]);
+
+  if (isAccessLoading) {
+    return <AccessLoadingScreen />;
+  }
 
   if (!isPaid) {
     return null;

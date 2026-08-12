@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
+import { AccessLoadingScreen } from '@/components/access-loading-screen';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { formatElevationDisplay } from '@/utils/profile-defaults';
@@ -114,7 +115,7 @@ function needsPlotAttention(profile: {
 
 export default function ArchiveScreen() {
   const router = useRouter();
-  const { isPaid } = useAppAccess();
+  const { isAccessLoading, isPaid } = useAppAccess();
   const { loadFromSavedProfile } = useVoiceNoteSession();
   const { profiles, selectedProfileId, setSelectedProfileId, deleteProfile, reopenProfileForEditing, ensureProfilePdf, retryPendingVoiceProcessing, isLoaded } = useSavedProfiles();
   const [searchQuery, setSearchQuery] = useState('');
@@ -219,10 +220,14 @@ export default function ArchiveScreen() {
   }, [openProfileId, scrollToProfileCard, viewportHeight]);
 
   useEffect(() => {
-    if (!isPaid) {
+    if (!isAccessLoading && !isPaid) {
       router.replace({ pathname: '/upgrade', params: { feature: 'Archive', returnTo: '/archive' } });
     }
-  }, [isPaid, router]);
+  }, [isAccessLoading, isPaid, router]);
+
+  if (isAccessLoading) {
+    return <AccessLoadingScreen />;
+  }
 
   if (!isPaid) {
     return null;

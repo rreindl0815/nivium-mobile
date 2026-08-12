@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Image, ImageBackground, Platform, Pressable, 
 
 import type { CurrentLocationStatus } from '@/components/profile-editor/editor-types';
 import { useAppAccess } from '@/context/app-access-context';
+import { AccessLoadingScreen } from '@/components/access-loading-screen';
 import { useSavedProfiles } from '@/context/saved-profiles-context';
 import { useVoiceNoteSession } from '@/context/voice-note-session-context';
 import { getCurrentLocationErrorMessage, resolveCurrentLocationValuesAsync } from '@/utils/current-location';
@@ -121,7 +122,7 @@ function buildVoiceNoteSeedValues(values: Record<string, string>) {
 
 export default function RecordNotesScreen() {
   const router = useRouter();
-  const { isPaid } = useAppAccess();
+  const { isAccessLoading, isPaid } = useAppAccess();
   const { session, clearSession, setFromFormatterResult, replaceReviewValues } = useVoiceNoteSession();
   const { queueVoiceNoteRecording, finalizePendingVoiceNoteProcessing } = useSavedProfiles();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -146,10 +147,14 @@ export default function RecordNotesScreen() {
   const canOpenReview = !recording && !isProcessingAudio && hasReviewReady;
 
   useEffect(() => {
-    if (!isPaid && !hasActiveRecorder) {
+    if (!isAccessLoading && !isPaid && !hasActiveRecorder) {
       router.replace({ pathname: '/upgrade', params: { feature: 'Voice Notes', returnTo: '/record-notes' } });
     }
-  }, [hasActiveRecorder, isPaid, router]);
+  }, [hasActiveRecorder, isAccessLoading, isPaid, router]);
+
+  if (isAccessLoading && !hasActiveRecorder) {
+    return <AccessLoadingScreen />;
+  }
 
   if (!isPaid && !hasActiveRecorder) {
     return null;

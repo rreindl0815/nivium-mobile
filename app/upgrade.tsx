@@ -22,12 +22,19 @@ function buildResumeUpgradePath(feature: string, returnTo: string | undefined) {
 export default function UpgradeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ feature?: string; returnTo?: string; resumePaywall?: string }>();
-  const { accessSource, presentPaywall, purchasesConfigured, restorePurchases, revenueCatIdentityReady } = useAppAccess();
+  const { accessSource, isAccessLoading, isPaid, presentPaywall, purchasesConfigured, restorePurchases, revenueCatIdentityReady } = useAppAccess();
   const { authConfigured, isAuthenticated, isLoaded: authLoaded, user } = useAuth();
   const feature = getSingleParam(params.feature) ?? 'This feature';
   const returnTo = getSingleParam(params.returnTo);
   const resumePaywall = getSingleParam(params.resumePaywall) === '1';
   const autoOpenedRef = useRef(false);
+
+  useEffect(() => {
+    if (isAccessLoading || !isPaid) {
+      return;
+    }
+    router.replace((returnTo || '/') as never);
+  }, [isAccessLoading, isPaid, returnTo, router]);
 
   const handlePaidAccess = () => {
     void (async () => {
@@ -43,6 +50,11 @@ export default function UpgradeScreen() {
             next: buildResumeUpgradePath(feature, returnTo),
           },
         });
+        return;
+      }
+
+      if (isAccessLoading) {
+        Alert.alert('Checking Access', 'Nivium is reconnecting your account and subscription. Please try again in a moment.');
         return;
       }
 
@@ -96,6 +108,11 @@ export default function UpgradeScreen() {
         return;
       }
 
+      if (isAccessLoading || !revenueCatIdentityReady) {
+        Alert.alert('Account Syncing', 'Please wait a moment while Nivium reconnects your account before restoring purchases.');
+        return;
+      }
+
       if (!purchasesConfigured) {
         Alert.alert(
           'Restore Unavailable',
@@ -103,6 +120,7 @@ export default function UpgradeScreen() {
         );
         return;
       }
+
 
       try {
         const restored = await restorePurchases();
@@ -126,7 +144,7 @@ export default function UpgradeScreen() {
   };
 
   useEffect(() => {
-    if (autoOpenedRef.current || !resumePaywall || !authLoaded || !isAuthenticated || !revenueCatIdentityReady) {
+    if (autoOpenedRef.current || isAccessLoading || isPaid || !resumePaywall || !authLoaded || !isAuthenticated || !revenueCatIdentityReady) {
       return;
     }
     autoOpenedRef.current = true;
@@ -162,7 +180,7 @@ export default function UpgradeScreen() {
         Alert.alert('Unable To Open Paywall', 'Please try again in a moment.');
       }
     })();
-  }, [authConfigured, authLoaded, isAuthenticated, presentPaywall, purchasesConfigured, resumePaywall, returnTo, revenueCatIdentityReady, router]);
+  }, [authConfigured, authLoaded, isAccessLoading, isAuthenticated, isPaid, presentPaywall, purchasesConfigured, resumePaywall, returnTo, revenueCatIdentityReady, router]);
 
   return (
     <SafeAreaView style={styles.safeArea}>

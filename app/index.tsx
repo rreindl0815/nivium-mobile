@@ -1,5 +1,5 @@
 import { type Href, useRouter } from 'expo-router';
-import { Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, ImageBackground, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppAccess } from '@/context/app-access-context';
 
@@ -41,9 +41,13 @@ const utilityAction = {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { isPaid } = useAppAccess();
+  const { isAccessLoading, isPaid } = useAppAccess();
 
   const handlePaidOnlyPress = (title: string, route: string) => {
+    if (isAccessLoading) {
+      Alert.alert('Checking Access', 'Nivium is reconnecting your account and subscription. Please try again in a moment.');
+      return;
+    }
     if (isPaid) {
       router.push(route as Href);
       return;
