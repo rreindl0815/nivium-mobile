@@ -31,6 +31,7 @@ const EXPO_GO_NATIVE_PURCHASES_UNAVAILABLE =
 const REVENUECAT_IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY ?? '';
 const REVENUECAT_ANDROID_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY ?? '';
 const REVENUECAT_ENTITLEMENT_ID = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'pro';
+const REVENUECAT_REQUEST_TIMEOUT_MS = 12000;
 
 const AppAccessContext = createContext<AppAccessContextValue | null>(null);
 
@@ -46,6 +47,25 @@ function getRevenueCatApiKey() {
 
 function hasPaidEntitlement(customerInfo: CustomerInfo | null) {
   return Boolean(customerInfo?.entitlements.active?.[REVENUECAT_ENTITLEMENT_ID]);
+}
+
+function withRevenueCatTimeout<T>(request: Promise<T>) {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`RevenueCat request timed out after ${REVENUECAT_REQUEST_TIMEOUT_MS} ms.`));
+    }, REVENUECAT_REQUEST_TIMEOUT_MS);
+
+    request.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
 
 export function AppAccessProvider({ children }: { children: React.ReactNode }) {
@@ -116,13 +136,11 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
       setRevenueCatIdentityReady(false);
       setCustomerInfoCheckComplete(false);
       Purchases.addCustomerInfoUpdateListener(listener);
-      void Purchases.getCustomerInfo()
+      void withRevenueCatTimeout(Purchases.getCustomerInfo())
         .then((info) => {
           setCustomerInfo(info);
         })
-        .catch(() => {
-          setCustomerInfo(null);
-        })
+        .catch(() => null)
         .finally(() => {
           setCustomerInfoCheckComplete(true);
         });
@@ -160,14 +178,14 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
       setRevenueCatIdentityReady(false);
       setCustomerInfoCheckComplete(false);
       try {
-        const currentAppUserId = await Purchases.getAppUserID().catch(() => '');
+        const currentAppUserId = await withRevenueCatTimeout(Purchases.getAppUserID()).catch(() => '');
         let identityReady = currentAppUserId === user?.id;
         let latestCustomerInfo: CustomerInfo | null = null;
 
         if (user) {
           if (currentAppUserId !== user.id) {
             try {
-              const result = await Purchases.logIn(user.id);
+              const result = await withRevenueCatTimeout(Purchases.logIn(user.id));
               identityReady = true;
               latestCustomerInfo = result.customerInfo;
               if (!isMounted) {
@@ -180,15 +198,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
           }
 
           try {
-            await Purchases.setEmail(user.email);
-            await Purchases.setDisplayName(user.displayName?.trim() ? user.displayName.trim() : null);
-            await Purchases.syncAttributesAndOfferingsIfNeeded().catch(() => null);
-          } catch (error) {
-            console.warn('RevenueCat customer attribute sync failed', error);
-          }
-
-          try {
-            const refreshedCustomerInfo = await Purchases.getCustomerInfo();
+            const refreshedCustomerInfo = await withRevenueCatTimeout(Purchases.getCustomerInfo());
             latestCustomerInfo = refreshedCustomerInfo;
           } catch (error) {
             console.warn('RevenueCat customer refresh failed', error);
@@ -202,12 +212,27 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
           }
           setCustomerInfoCheckComplete(true);
           setRevenueCatIdentityReady(identityReady);
+
+          // Customer attributes are useful metadata, but they must never delay access checks.
+          void (async () => {
+            try {
+              await withRevenueCatTimeout(Purchases.setEmail(user.email));
+              await withRevenueCatTimeout(
+                Purchases.setDisplayName(user.displayName?.trim() ? user.displayName.trim() : null)
+              );
+              await withRevenueCatTimeout(Purchases.syncAttributesAndOfferingsIfNeeded()).catch(() => null);
+            } catch (error) {
+              console.warn('RevenueCat customer attribute sync failed', error);
+            }
+          })();
           return;
         }
 
-        const anonymous = await Purchases.isAnonymous().catch(() => currentAppUserId.startsWith('$RCAnonymousID:'));
+        const anonymous = await withRevenueCatTimeout(Purchases.isAnonymous()).catch(() =>
+          currentAppUserId.startsWith('$RCAnonymousID:')
+        );
         if (!anonymous) {
-          const loggedOutInfo = await Purchases.logOut();
+          const loggedOutInfo = await withRevenueCatTimeout(Purchases.logOut());
           if (!isMounted) {
             return;
           }
@@ -241,16 +266,14 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setCustomerInfoCheckComplete(false);
       void (async () => {
         try {
-          await Purchases.invalidateCustomerInfoCache();
-          const info = await Purchases.getCustomerInfo();
+          // RevenueCat maintains an offline CustomerInfo cache. Keep paid access usable while
+          // a foreground refresh is slow or unavailable instead of deleting that cache first.
+          const info = await withRevenueCatTimeout(Purchases.getCustomerInfo());
           setCustomerInfo(info);
         } catch {
           // Keep the last known CustomerInfo when a foreground refresh is temporarily unavailable.
-        } finally {
-          setCustomerInfoCheckComplete(true);
         }
       })();
     });
